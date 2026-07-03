@@ -89,6 +89,15 @@ html, body {
   display: flex; flex-direction: column;
   min-width: 0; min-height: 0;
   border-top: 2px solid var(--accent, #666);
+  position: relative;
+}
+.term.drop-target::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--accent);
+  pointer-events: none;
+  z-index: 10;
 }
 
 .term-header {
@@ -103,7 +112,6 @@ html, body {
 .term.focused .term-header { background: #2a2a33; }
 .term-header:active { cursor: grabbing; }
 .term.dragging { opacity: 0.45; }
-.term.drop-target { outline: 2px solid var(--accent); outline-offset: -2px; }
 .term-header .dot {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--accent); flex-shrink: 0;

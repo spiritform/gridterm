@@ -8,7 +8,7 @@ const { listen } = window.__TAURI__.event;
 const { getCurrentWindow } = window.__TAURI__.window;
 const { homeDir } = window.__TAURI__.path;
 
-const DEFAULT_ACCENTS = ['#ff8c42', '#4ade80', '#b967ff'];
+const DEFAULT_ACCENTS = ['#ff8c42', '#4ade80', '#7c9eff'];
 
 function loadSlotOverride(i) {
   try {
@@ -232,44 +232,6 @@ async function mountTerminal(col, colEl, bodyEl) {
   } catch (_) {
     // Fall back to default renderer if WebGL isn't available.
   }
-  // Wait for the browser to lay out the terminal body before measuring it.
-  await new Promise((r) => requestAnimationFrame(r));
-  try { fit.fit(); } catch (_) {}
-
-  const cwdEl = colEl.querySelector('.cwd-display');
-  const projectEl = colEl.querySelector('.project');
-  term.parser.registerOscHandler(9, (data) => {
-    const semi = data.indexOf(';');
-    if (semi < 0) return false;
-    const sub = data.slice(0, semi);
-    const payload = data.slice(semi + 1);
-    if (sub === '9') {
-      const cwd = payload.replace(/^"|"$/g, '');
-      if (cwdEl && cwd) {
-        cwdEl.textContent = cwd;
-        cwdEl.title = cwd;
-      }
-      if (projectEl && cwd && document.activeElement !== projectEl && !col.registeredProject) {
-        const basename = cwd.split(/[\\/]/).filter(Boolean).pop() || cwd;
-        projectEl.textContent = basename;
-      }
-      // Persist the current cwd so restarts land back here.
-      if (cwd && typeof col.slotIdx === 'number') {
-        saveSlotOverride(col.slotIdx, { cwd });
-      }
-      return true;
-    }
-    return false;
-  });
-
-  await invoke('spawn_pty', {
-    id: col.id,
-    shell: null,
-    cwd: col.cwd,
-    cols: term.cols,
-    rows: term.rows,
-  });
-
   // Custom fit: reserve room for our styled 8px scrollbar + gutter so terminal
   // cells never render under the scrollbar. `.term-body` has 0 right padding
   // so the scrollbar sits flush against the column separator.
@@ -300,21 +262,63 @@ async function mountTerminal(col, colEl, bodyEl) {
     }
   };
 
+  // Wait for the browser to lay out the terminal body before measuring it.
+  // Two rAFs: first lets layout settle, second lets any pending window-maximize
+  // reflow complete before we lock in the terminal size.
+  await new Promise((r) => requestAnimationFrame(r));
+  await new Promise((r) => requestAnimationFrame(r));
+  try { fit.fit(); } catch (_) {}
+  fitNoScrollbarReserve();
 
-  requestAnimationFrame(() => {
-    try {
-      fitNoScrollbarReserve();
-      invoke('resize_pty', { id: col.id, cols: term.cols, rows: term.rows });
-    } catch (_) {}
+  const cwdEl = colEl.querySelector('.cwd-display');
+  const projectEl = colEl.querySelector('.project');
+  term.parser.registerOscHandler(9, (data) => {
+    const semi = data.indexOf(';');
+    if (semi < 0) return false;
+    const sub = data.slice(0, semi);
+    const payload = data.slice(semi + 1);
+    if (sub === '9') {
+      const cwd = payload.replace(/^"|"$/g, '');
+      if (cwdEl && cwd) {
+        cwdEl.textContent = cwd;
+        cwdEl.title = cwd;
+      }
+      if (projectEl && cwd && document.activeElement !== projectEl && !col.registeredProject) {
+        const basename = cwd.split(/[\\/]/).filter(Boolean).pop() || cwd;
+        projectEl.textContent = basename;
+      }
+      // Persist the current cwd so restarts land back here.
+      if (cwd && typeof col.slotIdx === 'number') {
+        saveSlotOverride(col.slotIdx, { cwd });
+      }
+      return true;
+    }
+    return false;
   });
 
-  // Refit on any size change of this column's body (window resize, maximize toggle, etc.)
-  const ro = new ResizeObserver(() => {
-    try {
-      fitNoScrollbarReserve();
-      invoke('resize_pty', { id: col.id, cols: term.cols, rows: term.rows });
-    } catch (_) {}
+  // Spawn with the final (scrollbar-corrected) size so the child sees the
+  // right cols on its first render and doesn't have to redraw on SIGWINCH.
+  await invoke('spawn_pty', {
+    id: col.id,
+    shell: null,
+    cwd: col.cwd,
+    cols: term.cols,
+    rows: term.rows,
   });
+
+  // Refit on size changes (window resize, maximize toggle, etc.), debounced
+  // so a maximize-drag doesn't blast SIGWINCH at every intermediate pixel.
+  let refitTimer;
+  const scheduleRefit = () => {
+    clearTimeout(refitTimer);
+    refitTimer = setTimeout(() => {
+      try {
+        fitNoScrollbarReserve();
+        invoke('resize_pty', { id: col.id, cols: term.cols, rows: term.rows });
+      } catch (_) {}
+    }, 120);
+  };
+  const ro = new ResizeObserver(scheduleRefit);
   ro.observe(bodyEl);
 
   await listen(`pty-data-${col.id}`, (e) => {
@@ -580,17 +584,9 @@ async function main() {
     if (Number.isFinite(slotIdx)) toggleSlot(slotIdx);
   });
 
-  let resizeTimer;
-  window.addEventListener('resize', () => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      for (const m of mounted) {
-        if (!m.fit) continue;
-        m.fit.fit();
-        invoke('resize_pty', { id: m.col.id, cols: m.term.cols, rows: m.term.rows });
-      }
-    }, 100);
-  });
+  // Per-column ResizeObserver in mountTerminal handles window resize too, so
+  // no need for a redundant top-level listener that would race the debounced
+  // per-column refit and call the non-scrollbar-aware fit.fit().
 }
 
 function injectScrollbarStyle() {
