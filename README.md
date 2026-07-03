@@ -2,7 +2,7 @@
 
 **gridterm is a lightweight terminal grid for Windows.** It puts up to 3 real shells side by side in one window, each with a labeled header showing project name, working directory, and a color-coded dot — so you always know which terminal is which.
 
-![gridterm screenshot](docs/screenshot.png)
+![gridterm screenshot](docs/screenshot-0.1.6.png)
 
 ## Why
 
