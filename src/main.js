@@ -237,6 +237,10 @@ async function mountTerminal(col, colEl, bodyEl) {
         const basename = cwd.split(/[\\/]/).filter(Boolean).pop() || cwd;
         projectEl.textContent = basename;
       }
+      // Persist the current cwd so restarts land back here.
+      if (cwd && typeof col.slotIdx === 'number') {
+        saveSlotOverride(col.slotIdx, { cwd });
+      }
       return true;
     }
     return false;
@@ -477,4 +481,17 @@ async function main() {
   });
 }
 
-window.addEventListener('DOMContentLoaded', main);
+function injectScrollbarStyle() {
+  const s = document.createElement('style');
+  s.textContent = `
+    ::-webkit-scrollbar { width: 0 !important; height: 0 !important; display: none !important; }
+    ::-webkit-scrollbar-thumb, ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { display: none !important; background: transparent !important; }
+    * { scrollbar-width: none !important; -ms-overflow-style: none !important; }
+  `;
+  document.head.appendChild(s);
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  injectScrollbarStyle();
+  main();
+});

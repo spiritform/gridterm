@@ -157,6 +157,7 @@ html, body {
 .term-body .xterm { height: 100%; }
 .term-body .xterm-viewport {
   background: transparent !important;
+  overflow: hidden !important;
   scrollbar-width: none;
 }
-.term-body .xterm-viewport::-webkit-scrollbar { display: none; }
+.term-body .xterm-viewport::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
