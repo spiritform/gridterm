@@ -1,6 +1,7 @@
 import { Terminal } from './vendor/xterm/xterm.mjs';
 import { FitAddon } from './vendor/addon-fit/addon-fit.mjs';
 import { Unicode11Addon } from './vendor/addon-unicode11/addon-unicode11.mjs';
+import { WebglAddon } from './vendor/addon-webgl/addon-webgl.mjs';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -56,27 +57,27 @@ function makeDefaultCol(index) {
 }
 
 const XTERM_THEME = {
-  background: '#0b0b0c',
-  foreground: '#e6e6e8',
-  cursor: '#e6e6e8',
-  cursorAccent: '#0b0b0c',
-  selectionBackground: 'rgba(255,255,255,0.15)',
-  black: '#0b0b0c',
-  red: '#e06c75',
-  green: '#6bcf7f',
-  yellow: '#e5c07b',
-  blue: '#7c9eff',
-  magenta: '#b967ff',
-  cyan: '#56b6c2',
-  white: '#e6e6e8',
-  brightBlack: '#55555c',
-  brightRed: '#e06c75',
-  brightGreen: '#6bcf7f',
-  brightYellow: '#e5c07b',
-  brightBlue: '#8ab4f8',
-  brightMagenta: '#b967ff',
-  brightCyan: '#56b6c2',
-  brightWhite: '#ffffff',
+  background: '#131318',
+  foreground: '#b8b8c0',
+  cursor: '#b8b8c0',
+  cursorAccent: '#131318',
+  selectionBackground: 'rgba(255,255,255,0.10)',
+  black: '#0f0f11',
+  red: '#d47a83',
+  green: '#7cbf95',
+  yellow: '#d0b47c',
+  blue: '#8098d9',
+  magenta: '#b183e0',
+  cyan: '#7bb3b8',
+  white: '#b8b8c0',
+  brightBlack: '#585862',
+  brightRed: '#d47a83',
+  brightGreen: '#7cbf95',
+  brightYellow: '#d0b47c',
+  brightBlue: '#9bb5e8',
+  brightMagenta: '#b183e0',
+  brightCyan: '#7bb3b8',
+  brightWhite: '#d8d8de',
 };
 
 function shortCwd(path) {
@@ -202,11 +203,17 @@ function reorderColumns(from, to) {
 
 async function mountTerminal(col, colEl, bodyEl) {
   const term = new Terminal({
-    fontFamily: 'Cascadia Mono, Consolas, monospace',
+    fontFamily: '"Cascadia Code", "Cascadia Mono", "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace',
     fontSize: 13,
-    lineHeight: 1.2,
+    fontWeight: 300,
+    fontWeightBold: 500,
+    lineHeight: 1.6,
+    letterSpacing: 0.4,
     theme: XTERM_THEME,
     cursorBlink: true,
+    cursorStyle: 'bar',
+    cursorWidth: 2,
+    cursorInactiveStyle: 'none',
     scrollback: 5000,
     allowProposedApi: true,
   });
@@ -216,6 +223,15 @@ async function mountTerminal(col, colEl, bodyEl) {
   term.loadAddon(unicode11);
   term.unicode.activeVersion = '11';
   term.open(bodyEl);
+
+  // WebGL renderer — sharper subpixel text than the default canvas renderer.
+  try {
+    const webgl = new WebglAddon();
+    webgl.onContextLoss(() => webgl.dispose());
+    term.loadAddon(webgl);
+  } catch (_) {
+    // Fall back to default renderer if WebGL isn't available.
+  }
   // Wait for the browser to lay out the terminal body before measuring it.
   await new Promise((r) => requestAnimationFrame(r));
   try { fit.fit(); } catch (_) {}
@@ -312,6 +328,17 @@ async function mountTerminal(col, colEl, bodyEl) {
     invoke('write_pty', { id: col.id, data });
   });
 
+  // Highlight the column whose terminal currently has keyboard focus.
+  const textarea = colEl.querySelector('.xterm-helper-textarea');
+  if (textarea) {
+    textarea.addEventListener('focus', () => {
+      document
+        .querySelectorAll('.term.focused')
+        .forEach((el) => el.classList.remove('focused'));
+      colEl.classList.add('focused');
+    });
+  }
+
   // Only the cwd is editable — titles are set by claude auto-register.
   const commitCwd = () => {
     const val = cwdEl.textContent.trim();
@@ -331,32 +358,85 @@ async function mountTerminal(col, colEl, bodyEl) {
     }
   });
 
-  // Image paste: intercept before xterm swallows it as a text-only paste.
-  bodyEl.addEventListener(
+  return { term, fit };
+}
+
+function findFocusedColumn() {
+  const active = document.activeElement;
+  if (!active) return mounted[0];
+  for (const m of mounted) {
+    if (m.colEl && m.colEl.contains(active)) return m;
+  }
+  return mounted[0];
+}
+
+async function tryPasteImageFromClipboardItems(items, targetCol) {
+  if (!items) return false;
+  for (const item of items) {
+    if (item.type && item.type.startsWith('image/')) {
+      const blob = typeof item.getAsFile === 'function' ? item.getAsFile() : item;
+      if (!blob) continue;
+      const buf = await blob.arrayBuffer();
+      const bytes = Array.from(new Uint8Array(buf));
+      const path = await invoke('save_paste_image', { bytes });
+      await invoke('write_pty', { id: targetCol.col.id, data: path });
+      return true;
+    }
+  }
+  return false;
+}
+
+function wireImagePaste() {
+  // Capture-phase paste at document root — catches the event before xterm's
+  // textarea handler runs and swallows it.
+  document.addEventListener(
     'paste',
     async (e) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (const item of items) {
-        if (item.type && item.type.startsWith('image/')) {
-          e.preventDefault();
-          e.stopPropagation();
-          const blob = item.getAsFile();
-          if (!blob) return;
-          const buf = await blob.arrayBuffer();
-          const bytes = Array.from(new Uint8Array(buf));
-          try {
-            const path = await invoke('save_paste_image', { bytes });
-            await invoke('write_pty', { id: col.id, data: path });
-          } catch (_) {}
-          return;
-        }
+      const target = findFocusedColumn();
+      if (!target) return;
+      const cd = e.clipboardData;
+      if (!cd) return;
+      const handled =
+        (await tryPasteImageFromClipboardItems(cd.items, target)) ||
+        (await tryPasteImageFromClipboardItems(cd.files, target));
+      if (handled) {
+        e.preventDefault();
+        e.stopPropagation();
       }
     },
     true,
   );
 
-  return { term, fit };
+  // Fallback: Ctrl+V via async clipboard API — some clipboard sources (e.g.
+  // Snipping Tool bitmaps) don't populate clipboardData.items in WebView2.
+  document.addEventListener(
+    'keydown',
+    async (e) => {
+      if (!(e.ctrlKey && (e.key === 'v' || e.key === 'V'))) return;
+      try {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          for (const type of item.types) {
+            if (type.startsWith('image/')) {
+              const blob = await item.getType(type);
+              const buf = await blob.arrayBuffer();
+              const bytes = Array.from(new Uint8Array(buf));
+              const target = findFocusedColumn();
+              if (!target) return;
+              const path = await invoke('save_paste_image', { bytes });
+              await invoke('write_pty', { id: target.col.id, data: path });
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+          }
+        }
+      } catch (_) {
+        // No permission or non-image clipboard — let xterm handle text paste.
+      }
+    },
+    true,
+  );
 }
 
 const mounted = [];
@@ -448,6 +528,7 @@ function wireWindowControls() {
 async function main() {
   wireWindowControls();
   wireGridDrop();
+  wireImagePaste();
 
   let home;
   try { home = await homeDir(); } catch (_) { home = 'C:\\'; }
