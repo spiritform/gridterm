@@ -103,7 +103,98 @@ function buildColumn(col) {
     </div>
     <div class="term-body"></div>
   `;
+  wireDragHandlers(el);
   return el;
+}
+
+let dragSrcColEl = null;
+let dragStartX = 0;
+let dragStartY = 0;
+let dragActivated = false;
+const DRAG_THRESHOLD = 6;
+
+function wireDragHandlers(colEl) {
+  const header = colEl.querySelector('.term-header');
+  header.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    dragSrcColEl = colEl;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    dragActivated = false;
+  });
+}
+
+function activateDrag() {
+  dragActivated = true;
+  if (dragSrcColEl) dragSrcColEl.classList.add('dragging');
+  document.body.classList.add('is-dragging');
+}
+
+function endDrag(commit) {
+  if (dragSrcColEl && dragActivated && commit) {
+    const target = document.querySelector('.term.drop-target');
+    if (target && target !== dragSrcColEl) {
+      const fromIdx = mounted.findIndex((m) => m.colEl === dragSrcColEl);
+      const toIdx = mounted.findIndex((m) => m.colEl === target);
+      if (fromIdx >= 0 && toIdx >= 0) reorderColumns(fromIdx, toIdx);
+    }
+  }
+  if (dragSrcColEl) dragSrcColEl.classList.remove('dragging');
+  document.body.classList.remove('is-dragging');
+  clearDropTargets();
+  dragSrcColEl = null;
+  dragActivated = false;
+}
+
+function wireGridDrop() {
+  document.addEventListener('pointermove', (e) => {
+    if (!dragSrcColEl) return;
+    if (!dragActivated) {
+      const dx = Math.abs(e.clientX - dragStartX);
+      const dy = Math.abs(e.clientY - dragStartY);
+      if (dx < DRAG_THRESHOLD && dy < DRAG_THRESHOLD) return;
+      activateDrag();
+    }
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const target = under && under.closest && under.closest('.term');
+    if (target && target !== dragSrcColEl) {
+      if (!target.classList.contains('drop-target')) {
+        clearDropTargets();
+        target.classList.add('drop-target');
+      }
+    } else {
+      clearDropTargets();
+    }
+  });
+  document.addEventListener('pointerup', () => {
+    if (!dragSrcColEl) return;
+    endDrag(true);
+  });
+  document.addEventListener('pointercancel', () => {
+    if (!dragSrcColEl) return;
+    endDrag(false);
+  });
+}
+
+function clearDropTargets() {
+  for (const el of document.querySelectorAll('.term.drop-target')) {
+    el.classList.remove('drop-target');
+  }
+}
+
+function reorderColumns(from, to) {
+  const grid = document.getElementById('grid');
+  const [moving] = mounted.splice(from, 1);
+  mounted.splice(to, 0, moving);
+  for (const m of mounted) grid.appendChild(m.colEl);
+  updateCount();
+  requestAnimationFrame(() => {
+    for (const m of mounted) {
+      if (!m.fit) continue;
+      m.fit.fit();
+      invoke('resize_pty', { id: m.col.id, cols: m.term.cols, rows: m.term.rows });
+    }
+  });
 }
 
 async function mountTerminal(col, colEl, bodyEl) {
@@ -192,39 +283,50 @@ function updateCount() {
   document.getElementById('term-count').textContent = `${mounted.length} terminals`;
   document.getElementById('grid').style.setProperty('--cols', mounted.length);
   for (const btn of document.querySelectorAll('#col-picker button')) {
-    const n = parseInt(btn.dataset.n, 10);
-    const active = n <= mounted.length;
+    const slotIdx = parseInt(btn.dataset.n, 10) - 1;
+    const slotCfg = COLUMNS[slotIdx];
+    const active = mounted.some((m) => m.col.slotIdx === slotIdx);
     btn.classList.toggle('active', active);
-    if (active) {
-      const col = mounted[n - 1]?.col;
-      btn.style.setProperty('--dot-color', col?.accent || 'var(--text)');
-    } else {
-      btn.style.removeProperty('--dot-color');
-    }
+    btn.style.setProperty('--dot-color', slotCfg?.accent || 'var(--text)');
   }
 }
 
 async function addColumn(col) {
   const grid = document.getElementById('grid');
   const colEl = buildColumn(col);
-  grid.appendChild(colEl);
+  // Insert in slot order so drag can still reorder but toggle-on lands sensibly.
+  let inserted = false;
+  for (const m of mounted) {
+    if ((m.col.slotIdx ?? -1) > (col.slotIdx ?? -1)) {
+      grid.insertBefore(colEl, m.colEl);
+      inserted = true;
+      break;
+    }
+  }
+  if (!inserted) grid.appendChild(colEl);
   const bodyEl = colEl.querySelector('.term-body');
+  let entry;
   try {
     const t = await mountTerminal(col, colEl, bodyEl);
-    mounted.push({ col, colEl, ...t });
+    entry = { col, colEl, ...t };
   } catch (err) {
     bodyEl.textContent = `spawn error: ${err}`;
     bodyEl.style.color = '#e06c75';
     bodyEl.style.padding = '12px';
     bodyEl.style.fontFamily = 'Cascadia Mono, Consolas, monospace';
-    mounted.push({ col, colEl, term: null, fit: null });
+    entry = { col, colEl, term: null, fit: null };
   }
+  // Slot-ordered insert into mounted[]
+  let idx = mounted.findIndex((m) => (m.col.slotIdx ?? -1) > (col.slotIdx ?? -1));
+  if (idx < 0) idx = mounted.length;
+  mounted.splice(idx, 0, entry);
   updateCount();
 }
 
-async function removeLastColumn() {
-  const m = mounted.pop();
-  if (!m) return;
+async function removeSlot(slotIdx) {
+  const idx = mounted.findIndex((m) => m.col.slotIdx === slotIdx);
+  if (idx < 0) return;
+  const [m] = mounted.splice(idx, 1);
   try {
     if (m.term) m.term.dispose();
     await invoke('kill_pty', { id: m.col.id });
@@ -233,11 +335,15 @@ async function removeLastColumn() {
   updateCount();
 }
 
-async function setColumnCount(n) {
-  n = Math.max(1, Math.min(4, n));
-  while (mounted.length > n) await removeLastColumn();
-  while (mounted.length < n) {
-    await addColumn(makeDefaultCol(mounted.length));
+async function toggleSlot(slotIdx) {
+  const existing = mounted.find((m) => m.col.slotIdx === slotIdx);
+  if (existing) {
+    await removeSlot(slotIdx);
+  } else {
+    const base = COLUMNS[slotIdx];
+    if (!base) return;
+    const col = { ...base, id: `${base.id}-${Date.now().toString(36)}`, slotIdx };
+    await addColumn(col);
   }
   requestAnimationFrame(() => {
     for (const m of mounted) {
@@ -249,15 +355,16 @@ async function setColumnCount(n) {
 }
 
 async function main() {
-  for (const col of COLUMNS) {
-    await addColumn(col);
+  wireGridDrop();
+  for (let i = 0; i < COLUMNS.length; i++) {
+    await addColumn({ ...COLUMNS[i], slotIdx: i });
   }
 
   document.getElementById('col-picker').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-n]');
     if (!btn) return;
-    const n = parseInt(btn.dataset.n, 10);
-    if (Number.isFinite(n)) setColumnCount(n);
+    const slotIdx = parseInt(btn.dataset.n, 10) - 1;
+    if (Number.isFinite(slotIdx)) toggleSlot(slotIdx);
   });
 
   let resizeTimer;

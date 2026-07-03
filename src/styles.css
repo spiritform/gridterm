@@ -28,17 +28,17 @@ html, body {
 .titlebar-right {
   margin-left: auto; display: flex; align-items: center; gap: 8px;
 }
-.col-picker { display: flex; gap: 4px; }
+.col-picker { display: flex; gap: 5px; }
 .col-picker button {
-  width: 14px; height: 14px; padding: 0;
+  width: 18px; height: 18px; padding: 0;
   background: transparent;
   border: 1px solid var(--dimmer);
-  border-radius: 2px;
+  border-radius: 3px;
   cursor: pointer;
   position: relative;
-  transition: border-color 0.1s;
+  transition: background 0.15s, border-color 0.15s;
 }
-.col-picker button:hover { border-color: var(--dim); }
+.col-picker button:hover { border-color: var(--dim); background: rgba(255,255,255,0.04); }
 .col-picker button::after {
   content: '';
   position: absolute;
@@ -50,7 +50,11 @@ html, body {
   transition: background 0.15s, box-shadow 0.15s;
 }
 .col-picker button.active {
-  border-color: color-mix(in srgb, var(--dot-color, var(--text)) 55%, var(--border));
+  border-color: color-mix(in srgb, var(--dot-color, var(--text)) 65%, var(--border));
+  background: color-mix(in srgb, var(--dot-color, var(--text)) 15%, transparent);
+}
+.col-picker button.active:hover {
+  background: color-mix(in srgb, var(--dot-color, var(--text)) 22%, transparent);
 }
 .col-picker button.active::after {
   background: var(--dot-color, var(--text));
@@ -76,7 +80,12 @@ html, body {
   display: flex; align-items: center; gap: 10px;
   border-bottom: 1px solid var(--border);
   min-height: 44px; flex-shrink: 0;
+  cursor: grab;
+  user-select: none;
 }
+.term-header:active { cursor: grabbing; }
+.term.dragging { opacity: 0.45; }
+.term.drop-target { outline: 2px solid var(--accent); outline-offset: -2px; }
 .term-header .dot {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--accent); flex-shrink: 0;
