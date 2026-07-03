@@ -11,19 +11,27 @@ Juggling 4 identical black `cmd` windows is a pain. They all say "Command Prompt
 ## Features
 
 - **1–4 columns** — toggle each one on/off from the top bar
-- **Live cwd tracking** — the header updates automatically as you `cd`
+- **Live cwd tracking** — the title updates to the current folder's basename as you `cd`
+- **Editable paths** — click the cwd under any title and type a new folder; the terminal actually `cd`s there
 - **Claude Code detection** — badge flips to `running` when `claude` is running in that shell
+- **Auto-register on `claude`** — the first time `claude` runs in a column, its folder becomes that column's identity and sticks across sessions
+- **Persistent slots** — each column's project name + cwd survive restarts (stored in localStorage)
 - **Drag to reorder** — grab any header, drop it on another column
-- **Custom titlebar** with GRIDTERM branding + minimize / maximize / close
+- **Image paste** — paste a screenshot into a terminal and it lands as a temp `.png` path, ready for Claude Code to read
 
 ## Install (Windows)
 
 1. Go to [Releases](https://github.com/spiritform/gridterm/releases)
-2. Download `gridterm_0.1.0_x64-setup.exe`
+2. Download the latest `gridterm_<version>_x64-setup.exe`
 3. Run the installer. Windows may show a SmartScreen warning about an unknown publisher — click **More info → Run anyway**
 4. Launch gridterm from the Start menu
 
-That's it. No configuration required.
+## Usage
+
+- **Set a column's project folder** — click the path shown under the title, type the folder you want, press Enter. gridterm runs `cd /d <path>` in that shell and the title updates to the folder's name
+- **Register a project by running `claude`** — the moment you start Claude Code in a column, gridterm captures that folder as the column's identity, so future `cd`s inside subfolders won't rename the column
+- **Toggle a column off** — kills the shell. Toggling back on reopens it at the last saved folder
+- **Restart the app** — every column comes back where you left it
 
 ## Build from source
 
@@ -47,8 +55,8 @@ npm run tauri build
 
 Installers land in `src-tauri/target/release/bundle/`:
 
-- **Windows** — `nsis/gridterm_0.1.0_x64-setup.exe` (installer) or `msi/gridterm_0.1.0_x64_en-US.msi`
-- **macOS** — `dmg/gridterm_0.1.0_x64.dmg` and `macos/gridterm.app`
+- **Windows** — `nsis/gridterm_<version>_x64-setup.exe` or `msi/gridterm_<version>_x64_en-US.msi`
+- **macOS** — `dmg/gridterm_<version>_x64.dmg` and `macos/gridterm.app`
 - **Linux** — `deb/`, `appimage/`, or `rpm/`
 
 ### macOS notes
