@@ -378,10 +378,17 @@ async function mountTerminal(col, colEl, bodyEl) {
   const commitCwd = () => {
     const val = cwdEl.textContent.trim();
     if (!val || typeof col.slotIdx !== 'number') return;
-    saveSlotOverride(col.slotIdx, { cwd: val });
+    // Manually pasting a new cwd re-identifies the slot — otherwise the
+    // previously-registered project name (e.g. "babee") sticks even after
+    // navigating to a completely different folder.
+    const basename = val.split(/[\\/]/).filter(Boolean).pop() || val;
+    saveSlotOverride(col.slotIdx, { cwd: val, project: basename });
     cwdEl.title = val;
+    col.registeredProject = basename;
+    if (projectEl && document.activeElement !== projectEl) {
+      projectEl.textContent = basename;
+    }
     // Actually cd into the new folder so the terminal reflects it immediately.
-    // OSC 9;9 will fire on the next prompt and update the title from the basename.
     const cdCmd = /\s/.test(val) ? `cd /d "${val}"\r` : `cd /d ${val}\r`;
     invoke('write_pty', { id: col.id, data: cdCmd });
   };
