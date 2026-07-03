@@ -258,6 +258,15 @@ async function mountTerminal(col, colEl, bodyEl) {
     } catch (_) {}
   });
 
+  // Refit on any size change of this column's body (window resize, maximize toggle, etc.)
+  const ro = new ResizeObserver(() => {
+    try {
+      fit.fit();
+      invoke('resize_pty', { id: col.id, cols: term.cols, rows: term.rows });
+    } catch (_) {}
+  });
+  ro.observe(bodyEl);
+
   await listen(`pty-data-${col.id}`, (e) => {
     term.write(e.payload);
   });
