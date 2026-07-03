@@ -113,18 +113,28 @@ html, body {
   font-weight: 600; font-size: 13px; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.term-header .project.outside-project { color: var(--dim); font-weight: 500; }
+.term-header .project.outside-project::before {
+  content: '/ '; color: var(--dimmer); font-weight: 400;
+}
 .term-header .meta {
   display: flex; gap: 6px; align-items: center; margin-top: 2px;
   font-size: 11px; color: var(--dim);
 }
-.term-header .meta .cli { color: var(--accent); font-weight: 500; }
-.term-header .meta .sep { color: var(--dimmer); }
+.term-header .header-tags {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 2px; flex-shrink: 0;
+}
+.term-header .header-tags .cli {
+  font-size: 11px; color: var(--accent); font-weight: 500;
+}
 .term-header .badge {
-  font-size: 10px; padding: 2px 6px; border-radius: 3px;
+  font-size: 10px; padding: 3px 6px; border-radius: 3px;
   background: rgba(255,255,255,0.06); color: var(--dim);
   border: 1px solid var(--border); white-space: nowrap;
   transition: color 0.15s, border-color 0.15s, background 0.15s;
   margin-top: 2px;
+  display: inline-flex; align-items: center; line-height: 1;
 }
 .term-header .badge.badge-active {
   color: var(--accent);
@@ -134,7 +144,7 @@ html, body {
 
 .term-body {
   flex: 1; min-height: 0;
-  padding: 6px 4px 6px 8px;
+  padding: 6px 0 6px 8px;
   background: var(--bg);
   overflow: hidden;
 }

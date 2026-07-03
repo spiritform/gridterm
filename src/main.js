@@ -82,7 +82,7 @@ function shortCwd(path) {
   if (!path) return '';
   const parts = path.split(/[\\/]/).filter(Boolean);
   if (parts.length <= 2) return path;
-  return '…\\' + parts.slice(-2).join('\\');
+  return parts.slice(-2).join('\\');
 }
 
 function buildColumn(col) {
@@ -95,12 +95,13 @@ function buildColumn(col) {
       <div class="info">
         <div class="project">${col.project}</div>
         <div class="meta">
-          <span class="cli">${col.cli}</span>
-          <span class="sep">·</span>
           <span class="cwd-display" title="${col.cwd}">${shortCwd(col.cwd)}</span>
         </div>
       </div>
-      <span class="badge">${col.badge}</span>
+      <div class="header-tags">
+        <span class="cli">${col.cli}</span>
+        <span class="badge">${col.badge}</span>
+      </div>
     </div>
     <div class="term-body"></div>
   `;
@@ -214,12 +215,13 @@ async function mountTerminal(col, colEl, bodyEl) {
   term.loadAddon(unicode11);
   term.unicode.activeVersion = '11';
   term.open(bodyEl);
-
-  requestAnimationFrame(() => {
-    fit.fit();
-  });
+  // Wait for the browser to lay out the terminal body before measuring it.
+  await new Promise((r) => requestAnimationFrame(r));
+  try { fit.fit(); } catch (_) {}
 
   const cwdEl = colEl.querySelector('.cwd-display');
+  const projectEl = colEl.querySelector('.project');
+  const initialCwd = (col.cwd || '').toLowerCase().replace(/[\\/]+$/, '');
   term.parser.registerOscHandler(9, (data) => {
     const semi = data.indexOf(';');
     if (semi < 0) return false;
@@ -230,6 +232,11 @@ async function mountTerminal(col, colEl, bodyEl) {
       if (cwdEl && cwd) {
         cwdEl.textContent = shortCwd(cwd);
         cwdEl.title = cwd;
+      }
+      if (projectEl && cwd) {
+        const norm = cwd.toLowerCase().replace(/[\\/]+$/, '');
+        const outside = initialCwd && !(norm === initialCwd || norm.startsWith(initialCwd + '\\') || norm.startsWith(initialCwd + '/'));
+        projectEl.classList.toggle('outside-project', outside);
       }
       return true;
     }
@@ -242,6 +249,13 @@ async function mountTerminal(col, colEl, bodyEl) {
     cwd: col.cwd,
     cols: term.cols,
     rows: term.rows,
+  });
+
+  requestAnimationFrame(() => {
+    try {
+      fit.fit();
+      invoke('resize_pty', { id: col.id, cols: term.cols, rows: term.rows });
+    } catch (_) {}
   });
 
   await listen(`pty-data-${col.id}`, (e) => {
@@ -367,6 +381,10 @@ function wireWindowControls() {
 async function main() {
   wireWindowControls();
   wireGridDrop();
+  // Fix grid width up front so each terminal mounts at its final column width;
+  // otherwise the first columns spawn wider than they'll end up, and their
+  // PTY cols stay stale after the grid shrinks.
+  document.getElementById('grid').style.setProperty('--cols', COLUMNS.length);
   for (let i = 0; i < COLUMNS.length; i++) {
     await addColumn({ ...COLUMNS[i], slotIdx: i });
   }
