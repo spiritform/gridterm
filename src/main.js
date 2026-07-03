@@ -8,7 +8,7 @@ const { listen } = window.__TAURI__.event;
 const { getCurrentWindow } = window.__TAURI__.window;
 const { homeDir } = window.__TAURI__.path;
 
-const DEFAULT_ACCENTS = ['#ff8c42', '#7c9eff', '#b967ff', '#4ade80'];
+const DEFAULT_ACCENTS = ['#ff8c42', '#4ade80', '#b967ff'];
 
 function loadSlotOverride(i) {
   try {
@@ -205,10 +205,10 @@ async function mountTerminal(col, colEl, bodyEl) {
   const term = new Terminal({
     fontFamily: '"Cascadia Code", "Cascadia Mono", "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace',
     fontSize: 13,
-    fontWeight: 300,
-    fontWeightBold: 500,
-    lineHeight: 1.6,
-    letterSpacing: 0.4,
+    fontWeight: 500,
+    fontWeightBold: 700,
+    lineHeight: 1.55,
+    letterSpacing: 0.3,
     theme: XTERM_THEME,
     cursorBlink: true,
     cursorStyle: 'bar',
@@ -270,9 +270,40 @@ async function mountTerminal(col, colEl, bodyEl) {
     rows: term.rows,
   });
 
+  // Custom fit: reserve room for our styled 8px scrollbar + gutter so terminal
+  // cells never render under the scrollbar. `.term-body` has 0 right padding
+  // so the scrollbar sits flush against the column separator.
+  const SCROLLBAR_RESERVE = 28;
+  const fitNoScrollbarReserve = () => {
+    try {
+      const d = term._core?._renderService?.dimensions;
+      const cellW = d?.css?.cell?.width ?? d?.actualCellWidth ?? d?.css?.actualCellWidth;
+      const cellH = d?.css?.cell?.height ?? d?.actualCellHeight ?? d?.css?.actualCellHeight;
+      if (!cellW || !cellH) {
+        fit.fit();
+        return;
+      }
+      const cs = window.getComputedStyle(bodyEl);
+      const padL = parseFloat(cs.paddingLeft) || 0;
+      const padR = parseFloat(cs.paddingRight) || 0;
+      const padT = parseFloat(cs.paddingTop) || 0;
+      const padB = parseFloat(cs.paddingBottom) || 0;
+      const w = bodyEl.clientWidth - padL - padR - SCROLLBAR_RESERVE;
+      const h = bodyEl.clientHeight - padT - padB;
+      const cols = Math.max(2, Math.floor(w / cellW));
+      const rows = Math.max(1, Math.floor(h / cellH));
+      if (cols !== term.cols || rows !== term.rows) {
+        term.resize(cols, rows);
+      }
+    } catch (_) {
+      try { fit.fit(); } catch (_) {}
+    }
+  };
+
+
   requestAnimationFrame(() => {
     try {
-      fit.fit();
+      fitNoScrollbarReserve();
       invoke('resize_pty', { id: col.id, cols: term.cols, rows: term.rows });
     } catch (_) {}
   });
@@ -280,7 +311,7 @@ async function mountTerminal(col, colEl, bodyEl) {
   // Refit on any size change of this column's body (window resize, maximize toggle, etc.)
   const ro = new ResizeObserver(() => {
     try {
-      fit.fit();
+      fitNoScrollbarReserve();
       invoke('resize_pty', { id: col.id, cols: term.cols, rows: term.rows });
     } catch (_) {}
   });

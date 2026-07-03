@@ -1,12 +1,12 @@
 # gridterm
 
-**gridterm is a lightweight terminal grid for Windows.** It puts up to 4 real shells side by side in one window, each with a labeled header showing project name, working directory, and a color-coded dot — so you always know which terminal is which.
+**gridterm is a lightweight terminal grid for Windows.** It puts up to 3 real shells side by side in one window, each with a labeled header showing project name, working directory, and a color-coded dot — so you always know which terminal is which.
 
 ![gridterm screenshot](docs/screenshot.png)
 
 ## Why
 
-Juggling 4 identical black `cmd` windows is a pain. They all say "Command Prompt" in the taskbar and it's easy to run the wrong command in the wrong project. gridterm gives every terminal an identity: a colored dot, a project name, and a live cwd. You always know where you are before you hit Enter.
+Juggling identical black `cmd` windows is a pain. They all say "Command Prompt" in the taskbar and it's easy to run the wrong command in the wrong project. gridterm gives every terminal an identity: a colored dot, a project name, and a live cwd. You always know where you are before you hit Enter.
 
 ## Features
 
