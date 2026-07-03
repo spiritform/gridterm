@@ -5,41 +5,22 @@ import { Unicode11Addon } from './vendor/addon-unicode11/addon-unicode11.mjs';
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 const { getCurrentWindow } = window.__TAURI__.window;
+const { homeDir } = window.__TAURI__.path;
 
-const COLUMNS = [
-  {
-    id: 'abel',
-    project: 'ABEL',
+const DEFAULT_ACCENTS = ['#ff8c42', '#7c9eff', '#b967ff', '#4ade80'];
+
+function makeDefaultColumns(home) {
+  return DEFAULT_ACCENTS.map((accent, i) => ({
+    id: `term${i + 1}`,
+    project: `terminal ${i + 1}`,
     cli: 'cmd',
-    cwd: 'H:\\claudecode-projects\\ABEL',
-    accent: '#ff8c42',
+    cwd: home,
+    accent,
     badge: 'shell',
-  },
-  {
-    id: 'vob',
-    project: 'vob-next',
-    cli: 'cmd',
-    cwd: 'H:\\claudecode-projects\\vob-next',
-    accent: '#7c9eff',
-    badge: 'tauri',
-  },
-  {
-    id: 'ghostshot',
-    project: 'ghostshot',
-    cli: 'cmd',
-    cwd: 'H:\\claudecode-projects\\GhostShot',
-    accent: '#b967ff',
-    badge: 'shell',
-  },
-  {
-    id: 'comfy',
-    project: 'comfyblockout',
-    cli: 'cmd',
-    cwd: 'H:\\claudecode-projects\\ComfyBlockout',
-    accent: '#4ade80',
-    badge: 'idle',
-  },
-];
+  }));
+}
+
+let COLUMNS = [];
 
 const PALETTE = ['#ff8c42', '#7c9eff', '#b967ff', '#4ade80', '#f472b6', '#60a5fa', '#fbbf24', '#a78bfa'];
 
@@ -298,6 +279,31 @@ async function mountTerminal(col, colEl, bodyEl) {
     invoke('write_pty', { id: col.id, data });
   });
 
+  // Image paste: intercept before xterm swallows it as a text-only paste.
+  bodyEl.addEventListener(
+    'paste',
+    async (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type && item.type.startsWith('image/')) {
+          e.preventDefault();
+          e.stopPropagation();
+          const blob = item.getAsFile();
+          if (!blob) return;
+          const buf = await blob.arrayBuffer();
+          const bytes = Array.from(new Uint8Array(buf));
+          try {
+            const path = await invoke('save_paste_image', { bytes });
+            await invoke('write_pty', { id: col.id, data: path });
+          } catch (_) {}
+          return;
+        }
+      }
+    },
+    true,
+  );
+
   return { term, fit };
 }
 
@@ -390,6 +396,28 @@ function wireWindowControls() {
 async function main() {
   wireWindowControls();
   wireGridDrop();
+
+  let home;
+  try { home = await homeDir(); } catch (_) { home = 'C:\\'; }
+  const storedRoot = localStorage.getItem('gridterm.rootFolder') || '';
+  const root = storedRoot.trim() || home;
+  COLUMNS = makeDefaultColumns(root);
+
+  const rootInput = document.getElementById('root-folder');
+  if (rootInput) {
+    rootInput.value = storedRoot;
+    rootInput.placeholder = home;
+    const saveRoot = () => {
+      const val = rootInput.value.trim();
+      if (val) localStorage.setItem('gridterm.rootFolder', val);
+      else localStorage.removeItem('gridterm.rootFolder');
+      const next = val || home;
+      COLUMNS = makeDefaultColumns(next);
+    };
+    rootInput.addEventListener('change', saveRoot);
+    rootInput.addEventListener('blur', saveRoot);
+  }
+
   // Fix grid width up front so each terminal mounts at its final column width;
   // otherwise the first columns spawn wider than they'll end up, and their
   // PTY cols stay stale after the grid shrinks.

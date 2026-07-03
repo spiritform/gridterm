@@ -136,6 +136,20 @@ fn kill_pty(state: State<PtyState>, id: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn save_paste_image(bytes: Vec<u8>) -> Result<String, String> {
+    let mut dir = std::env::temp_dir();
+    dir.push("gridterm");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+    dir.push(format!("paste-{}.png", ts));
+    std::fs::write(&dir, &bytes).map_err(|e| e.to_string())?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
 fn descendant_status(sys: &System, root: Pid) -> &'static str {
     let mut queue = vec![root];
     let mut seen: HashSet<Pid> = HashSet::new();
@@ -196,7 +210,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            spawn_pty, write_pty, resize_pty, kill_pty
+            spawn_pty, write_pty, resize_pty, kill_pty, save_paste_image
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
