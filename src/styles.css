@@ -134,7 +134,7 @@ html, body {
 
 .term-body {
   flex: 1; min-height: 0;
-  padding: 6px 8px;
+  padding: 6px 4px 6px 8px;
   background: var(--bg);
   overflow: hidden;
 }
