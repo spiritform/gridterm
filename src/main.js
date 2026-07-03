@@ -94,7 +94,7 @@ function buildColumn(col) {
     <div class="term-header">
       <div class="dot"></div>
       <div class="info">
-        <div class="project" contenteditable="plaintext-only" spellcheck="false">${col.project}</div>
+        <div class="project">${col.project}</div>
         <div class="meta">
           <span class="cwd-display" contenteditable="plaintext-only" spellcheck="false" title="${col.cwd}">${col.cwd}</span>
         </div>
@@ -308,32 +308,24 @@ async function mountTerminal(col, colEl, bodyEl) {
     invoke('write_pty', { id: col.id, data });
   });
 
-  // Inline-edit persistence: save custom project name / cwd to this slot's override.
-  const commitProject = () => {
-    const val = projectEl.textContent.trim();
-    if (!val || typeof col.slotIdx !== 'number') return;
-    saveSlotOverride(col.slotIdx, { project: val });
-    col.registeredProject = val;
-  };
+  // Only the cwd is editable — titles are set by claude auto-register.
   const commitCwd = () => {
     const val = cwdEl.textContent.trim();
     if (!val || typeof col.slotIdx !== 'number') return;
     saveSlotOverride(col.slotIdx, { cwd: val });
     cwdEl.title = val;
+    // Actually cd into the new folder so the terminal reflects it immediately.
+    // OSC 9;9 will fire on the next prompt and update the title from the basename.
+    const cdCmd = /\s/.test(val) ? `cd /d "${val}"\r` : `cd /d ${val}\r`;
+    invoke('write_pty', { id: col.id, data: cdCmd });
   };
-  const editKey = (commit) => (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      e.currentTarget.blur();
-    } else if (e.key === 'Escape') {
+  cwdEl.addEventListener('blur', commitCwd);
+  cwdEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === 'Escape') {
       e.preventDefault();
       e.currentTarget.blur();
     }
-  };
-  projectEl.addEventListener('blur', commitProject);
-  projectEl.addEventListener('keydown', editKey(commitProject));
-  cwdEl.addEventListener('blur', commitCwd);
-  cwdEl.addEventListener('keydown', editKey(commitCwd));
+  });
 
   // Image paste: intercept before xterm swallows it as a text-only paste.
   bodyEl.addEventListener(

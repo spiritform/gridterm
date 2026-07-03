@@ -112,14 +112,13 @@ html, body {
 .term-header .project {
   font-weight: 600; font-size: 13px; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  cursor: text; outline: none; border-radius: 2px;
 }
-.term-header .project:focus, .term-header .cwd-display:focus {
-  outline: none; background: rgba(255,255,255,0.06);
+.term-header .cwd-display { cursor: text; outline: none; border-radius: 2px; }
+.term-header .cwd-display:focus {
+  background: rgba(255,255,255,0.06);
   box-shadow: 0 0 0 1px var(--accent);
   padding: 0 4px; margin: 0 -4px;
 }
-.term-header .cwd-display { cursor: text; outline: none; border-radius: 2px; }
 .term-header .project.outside-project { color: var(--dim); font-weight: 500; }
 .term-header .project.outside-project::before {
   content: '/ '; color: var(--dimmer); font-weight: 400;
