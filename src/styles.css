@@ -45,14 +45,6 @@ html, body {
 .wc:hover { background: rgba(255,255,255,0.08); color: var(--text); }
 .wc-close:hover { background: #e81123; color: #fff; }
 .col-picker { display: flex; gap: 5px; }
-.root-folder {
-  background: var(--panel-2); color: var(--text);
-  border: 1px solid var(--border); border-radius: 3px;
-  padding: 3px 8px; font-size: 11px; font-family: inherit;
-  width: 240px; outline: none;
-}
-.root-folder:focus { border-color: #3a3a42; }
-.root-folder::placeholder { color: var(--dimmer); }
 .col-picker button {
   width: 18px; height: 18px; padding: 0;
   background: transparent;
@@ -120,7 +112,14 @@ html, body {
 .term-header .project {
   font-weight: 600; font-size: 13px; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  cursor: text; outline: none; border-radius: 2px;
 }
+.term-header .project:focus, .term-header .cwd-display:focus {
+  outline: none; background: rgba(255,255,255,0.06);
+  box-shadow: 0 0 0 1px var(--accent);
+  padding: 0 4px; margin: 0 -4px;
+}
+.term-header .cwd-display { cursor: text; outline: none; border-radius: 2px; }
 .term-header .project.outside-project { color: var(--dim); font-weight: 500; }
 .term-header .project.outside-project::before {
   content: '/ '; color: var(--dimmer); font-weight: 400;

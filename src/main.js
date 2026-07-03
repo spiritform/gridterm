@@ -9,15 +9,35 @@ const { homeDir } = window.__TAURI__.path;
 
 const DEFAULT_ACCENTS = ['#ff8c42', '#7c9eff', '#b967ff', '#4ade80'];
 
+function loadSlotOverride(i) {
+  try {
+    const raw = localStorage.getItem(`gridterm.slot.${i}`);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (_) {
+    return null;
+  }
+}
+
+function saveSlotOverride(i, patch) {
+  const cur = loadSlotOverride(i) || {};
+  const next = { ...cur, ...patch };
+  localStorage.setItem(`gridterm.slot.${i}`, JSON.stringify(next));
+}
+
 function makeDefaultColumns(home) {
-  return DEFAULT_ACCENTS.map((accent, i) => ({
-    id: `term${i + 1}`,
-    project: `terminal ${i + 1}`,
-    cli: 'cmd',
-    cwd: home,
-    accent,
-    badge: 'shell',
-  }));
+  return DEFAULT_ACCENTS.map((accent, i) => {
+    const base = {
+      id: `term${i + 1}`,
+      project: `terminal ${i + 1}`,
+      cli: 'cmd',
+      cwd: home,
+      accent,
+      badge: 'shell',
+    };
+    const override = loadSlotOverride(i);
+    return { ...base, ...(override || {}) };
+  });
 }
 
 let COLUMNS = [];
@@ -74,9 +94,9 @@ function buildColumn(col) {
     <div class="term-header">
       <div class="dot"></div>
       <div class="info">
-        <div class="project">${col.project}</div>
+        <div class="project" contenteditable="plaintext-only" spellcheck="false">${col.project}</div>
         <div class="meta">
-          <span class="cwd-display" title="${col.cwd}">${shortCwd(col.cwd)}</span>
+          <span class="cwd-display" contenteditable="plaintext-only" spellcheck="false" title="${col.cwd}">${col.cwd}</span>
         </div>
       </div>
       <div class="header-tags">
@@ -202,7 +222,6 @@ async function mountTerminal(col, colEl, bodyEl) {
 
   const cwdEl = colEl.querySelector('.cwd-display');
   const projectEl = colEl.querySelector('.project');
-  const initialCwd = (col.cwd || '').toLowerCase().replace(/[\\/]+$/, '');
   term.parser.registerOscHandler(9, (data) => {
     const semi = data.indexOf(';');
     if (semi < 0) return false;
@@ -211,13 +230,12 @@ async function mountTerminal(col, colEl, bodyEl) {
     if (sub === '9') {
       const cwd = payload.replace(/^"|"$/g, '');
       if (cwdEl && cwd) {
-        cwdEl.textContent = shortCwd(cwd);
+        cwdEl.textContent = cwd;
         cwdEl.title = cwd;
       }
-      if (projectEl && cwd) {
-        const norm = cwd.toLowerCase().replace(/[\\/]+$/, '');
-        const outside = initialCwd && !(norm === initialCwd || norm.startsWith(initialCwd + '\\') || norm.startsWith(initialCwd + '/'));
-        projectEl.classList.toggle('outside-project', outside);
+      if (projectEl && cwd && document.activeElement !== projectEl && !col.registeredProject) {
+        const basename = cwd.split(/[\\/]/).filter(Boolean).pop() || cwd;
+        projectEl.textContent = basename;
       }
       return true;
     }
@@ -266,6 +284,17 @@ async function mountTerminal(col, colEl, bodyEl) {
         badgeEl.textContent = 'running';
         badgeEl.classList.add('badge-active');
       }
+      // Register the current cwd as this slot's identity — persists across sessions
+      // and stops the auto-basename updates from overwriting it.
+      const nowCwd = cwdEl?.title || cwdEl?.textContent || '';
+      if (nowCwd && typeof col.slotIdx === 'number') {
+        const basename = nowCwd.split(/[\\/]/).filter(Boolean).pop() || nowCwd;
+        saveSlotOverride(col.slotIdx, { project: basename, cwd: nowCwd });
+        col.registeredProject = basename;
+        if (projectEl && document.activeElement !== projectEl) {
+          projectEl.textContent = basename;
+        }
+      }
     } else {
       if (cliEl) cliEl.textContent = col.cli;
       if (badgeEl) {
@@ -278,6 +307,33 @@ async function mountTerminal(col, colEl, bodyEl) {
   term.onData((data) => {
     invoke('write_pty', { id: col.id, data });
   });
+
+  // Inline-edit persistence: save custom project name / cwd to this slot's override.
+  const commitProject = () => {
+    const val = projectEl.textContent.trim();
+    if (!val || typeof col.slotIdx !== 'number') return;
+    saveSlotOverride(col.slotIdx, { project: val });
+    col.registeredProject = val;
+  };
+  const commitCwd = () => {
+    const val = cwdEl.textContent.trim();
+    if (!val || typeof col.slotIdx !== 'number') return;
+    saveSlotOverride(col.slotIdx, { cwd: val });
+    cwdEl.title = val;
+  };
+  const editKey = (commit) => (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.currentTarget.blur();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.currentTarget.blur();
+    }
+  };
+  projectEl.addEventListener('blur', commitProject);
+  projectEl.addEventListener('keydown', editKey(commitProject));
+  cwdEl.addEventListener('blur', commitCwd);
+  cwdEl.addEventListener('keydown', editKey(commitCwd));
 
   // Image paste: intercept before xterm swallows it as a text-only paste.
   bodyEl.addEventListener(
@@ -399,24 +455,7 @@ async function main() {
 
   let home;
   try { home = await homeDir(); } catch (_) { home = 'C:\\'; }
-  const storedRoot = localStorage.getItem('gridterm.rootFolder') || '';
-  const root = storedRoot.trim() || home;
-  COLUMNS = makeDefaultColumns(root);
-
-  const rootInput = document.getElementById('root-folder');
-  if (rootInput) {
-    rootInput.value = storedRoot;
-    rootInput.placeholder = home;
-    const saveRoot = () => {
-      const val = rootInput.value.trim();
-      if (val) localStorage.setItem('gridterm.rootFolder', val);
-      else localStorage.removeItem('gridterm.rootFolder');
-      const next = val || home;
-      COLUMNS = makeDefaultColumns(next);
-    };
-    rootInput.addEventListener('change', saveRoot);
-    rootInput.addEventListener('blur', saveRoot);
-  }
+  COLUMNS = makeDefaultColumns(home);
 
   // Fix grid width up front so each terminal mounts at its final column width;
   // otherwise the first columns spawn wider than they'll end up, and their
