@@ -4,6 +4,7 @@ import { Unicode11Addon } from './vendor/addon-unicode11/addon-unicode11.mjs';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
+const { getCurrentWindow } = window.__TAURI__.window;
 
 const COLUMNS = [
   {
@@ -280,7 +281,8 @@ async function mountTerminal(col, colEl, bodyEl) {
 const mounted = [];
 
 function updateCount() {
-  document.getElementById('term-count').textContent = `${mounted.length} terminals`;
+  const countEl = document.getElementById('term-count');
+  if (countEl) countEl.textContent = `${mounted.length} terminals`;
   document.getElementById('grid').style.setProperty('--cols', mounted.length);
   for (const btn of document.querySelectorAll('#col-picker button')) {
     const slotIdx = parseInt(btn.dataset.n, 10) - 1;
@@ -338,6 +340,7 @@ async function removeSlot(slotIdx) {
 async function toggleSlot(slotIdx) {
   const existing = mounted.find((m) => m.col.slotIdx === slotIdx);
   if (existing) {
+    if (mounted.length <= 1) return;
     await removeSlot(slotIdx);
   } else {
     const base = COLUMNS[slotIdx];
@@ -354,7 +357,15 @@ async function toggleSlot(slotIdx) {
   });
 }
 
+function wireWindowControls() {
+  const win = getCurrentWindow();
+  document.getElementById('win-min')?.addEventListener('click', () => win.minimize());
+  document.getElementById('win-max')?.addEventListener('click', () => win.toggleMaximize());
+  document.getElementById('win-close')?.addEventListener('click', () => win.close());
+}
+
 async function main() {
+  wireWindowControls();
   wireGridDrop();
   for (let i = 0; i < COLUMNS.length; i++) {
     await addColumn({ ...COLUMNS[i], slotIdx: i });

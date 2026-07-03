@@ -10,10 +10,11 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "gridterm",
+        "title": "GRIDTERM",
         "width": 1600,
         "height": 900,
-        "maximized": true
+        "maximized": true,
+        "decorations": false
       }
     ],
     "security": {

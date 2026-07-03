@@ -18,16 +18,32 @@ html, body {
 
 .titlebar {
   height: 32px; background: var(--panel);
-  display: flex; align-items: center; padding: 0 12px;
+  display: flex; align-items: stretch; padding: 0; gap: 0;
   border-bottom: 1px solid var(--border);
   font-size: 12px; color: var(--dim); user-select: none;
   flex-shrink: 0;
 }
-.titlebar .brand { color: var(--text); font-weight: 600; letter-spacing: 0.5px; }
-.titlebar .brand::after { content: '  ·  '; color: var(--dimmer); }
-.titlebar-right {
-  margin-left: auto; display: flex; align-items: center; gap: 8px;
+.titlebar-left {
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 14px;
 }
+.titlebar-drag { flex: 1; }
+.brand {
+  color: var(--text); font-weight: 700;
+  font-size: 13px; letter-spacing: 2.5px;
+  padding: 0 4px;
+}
+.window-controls { display: flex; }
+.wc {
+  width: 46px; height: 32px; padding: 0;
+  background: transparent;
+  border: none; color: var(--dim);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.1s, color 0.1s;
+}
+.wc:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+.wc-close:hover { background: #e81123; color: #fff; }
 .col-picker { display: flex; gap: 5px; }
 .col-picker button {
   width: 18px; height: 18px; padding: 0;

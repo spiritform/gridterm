@@ -11,15 +11,26 @@
   <body>
     <div class="app">
       <div class="titlebar">
-        <span class="brand">gridterm</span>
-        <span id="term-count">4 terminals</span>
-        <div class="titlebar-right">
+        <div class="titlebar-left">
+          <span class="brand" data-tauri-drag-region>GRIDTERM</span>
           <div class="col-picker" id="col-picker">
-            <button data-n="1" aria-label="1 column"></button>
-            <button data-n="2" aria-label="2 columns"></button>
-            <button data-n="3" aria-label="3 columns"></button>
-            <button data-n="4" aria-label="4 columns"></button>
+            <button data-n="1" aria-label="toggle column 1"></button>
+            <button data-n="2" aria-label="toggle column 2"></button>
+            <button data-n="3" aria-label="toggle column 3"></button>
+            <button data-n="4" aria-label="toggle column 4"></button>
           </div>
+        </div>
+        <div class="titlebar-drag" data-tauri-drag-region></div>
+        <div class="window-controls">
+          <button id="win-min" class="wc" aria-label="minimize">
+            <svg width="10" height="10" viewBox="0 0 10 10"><line x1="1" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1"/></svg>
+          </button>
+          <button id="win-max" class="wc" aria-label="maximize">
+            <svg width="10" height="10" viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+          </button>
+          <button id="win-close" class="wc wc-close" aria-label="close">
+            <svg width="10" height="10" viewBox="0 0 10 10"><line x1="1.5" y1="1.5" x2="8.5" y2="8.5" stroke="currentColor" stroke-width="1"/><line x1="8.5" y1="1.5" x2="1.5" y2="8.5" stroke="currentColor" stroke-width="1"/></svg>
+          </button>
         </div>
       </div>
       <div class="grid" id="grid"></div>
