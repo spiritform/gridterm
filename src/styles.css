@@ -25,13 +25,13 @@ html, body {
 }
 .titlebar-left {
   display: flex; align-items: center; gap: 12px;
-  padding: 0 14px;
+  padding: 0 14px 0 12px;
 }
 .titlebar-drag { flex: 1; }
 .brand {
   color: var(--text); font-weight: 700;
   font-size: 13px; letter-spacing: 2.5px;
-  padding: 0 4px;
+  padding: 0;
 }
 .window-controls { display: flex; }
 .wc {
@@ -93,7 +93,7 @@ html, body {
 
 .term-header {
   background: var(--panel); padding: 8px 10px 8px 12px;
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: flex-start; gap: 10px;
   border-bottom: 1px solid var(--border);
   min-height: 44px; flex-shrink: 0;
   cursor: grab;
@@ -103,9 +103,10 @@ html, body {
 .term.dragging { opacity: 0.45; }
 .term.drop-target { outline: 2px solid var(--accent); outline-offset: -2px; }
 .term-header .dot {
-  width: 8px; height: 8px; border-radius: 50%;
+  width: 7px; height: 7px; border-radius: 50%;
   background: var(--accent); flex-shrink: 0;
-  box-shadow: 0 0 8px var(--accent);
+  box-shadow: 0 0 4px var(--accent), 0 0 11px var(--accent);
+  margin-top: 6px;
 }
 .term-header .info { flex: 1; min-width: 0; }
 .term-header .project {
@@ -123,6 +124,7 @@ html, body {
   background: rgba(255,255,255,0.06); color: var(--dim);
   border: 1px solid var(--border); white-space: nowrap;
   transition: color 0.15s, border-color 0.15s, background 0.15s;
+  margin-top: 2px;
 }
 .term-header .badge.badge-active {
   color: var(--accent);
@@ -137,8 +139,8 @@ html, body {
   overflow: hidden;
 }
 .term-body .xterm { height: 100%; }
-.term-body .xterm-viewport { background: transparent !important; }
-.term-body .xterm-viewport::-webkit-scrollbar { width: 8px; }
-.term-body .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
-.term-body .xterm-viewport::-webkit-scrollbar-thumb { background: #4a4a52; border-radius: 0; }
-.term-body .xterm-viewport::-webkit-scrollbar-thumb:hover { background: #6a6a72; }
+.term-body .xterm-viewport {
+  background: transparent !important;
+  scrollbar-width: none;
+}
+.term-body .xterm-viewport::-webkit-scrollbar { display: none; }
