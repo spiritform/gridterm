@@ -1,0 +1,213 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>gridterm — mockup</title>
+<style>
+  :root {
+    --bg: #0b0b0c;
+    --panel: #131316;
+    --panel-2: #1a1a1e;
+    --text: #e6e6e8;
+    --dim: #8a8a92;
+    --dimmer: #55555c;
+    --border: #232328;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; overflow: hidden; }
+
+  .app { display: flex; flex-direction: column; height: 100%; }
+
+  .titlebar {
+    height: 32px; background: var(--panel);
+    display: flex; align-items: center; padding: 0 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px; color: var(--dim); user-select: none;
+    -webkit-app-region: drag;
+  }
+  .titlebar .brand { color: var(--text); font-weight: 600; letter-spacing: 0.5px; }
+  .titlebar .brand::after { content: '  ·  '; color: var(--dimmer); }
+  .titlebar .layout { margin-left: auto; display: flex; gap: 4px; -webkit-app-region: no-drag; }
+  .titlebar .layout button {
+    background: transparent; border: 1px solid var(--border); color: var(--dim);
+    padding: 2px 8px; font-size: 11px; border-radius: 3px; cursor: pointer;
+    font-family: inherit;
+  }
+  .titlebar .layout button.active { color: var(--text); border-color: #3a3a42; background: var(--panel-2); }
+
+  .grid { flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--border); }
+
+  .term {
+    background: var(--bg); display: flex; flex-direction: column; min-width: 0; min-height: 0;
+    border-top: 2px solid var(--accent, #666);
+  }
+
+  .term-header {
+    background: var(--panel); padding: 8px 10px 8px 12px;
+    display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border);
+    min-height: 44px;
+  }
+  .term-header .dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+    flex-shrink: 0; box-shadow: 0 0 8px var(--accent);
+  }
+  .term-header .info { flex: 1; min-width: 0; }
+  .term-header .project {
+    font-weight: 600; font-size: 13px; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .term-header .meta {
+    display: flex; gap: 6px; align-items: center; margin-top: 2px;
+    font-size: 11px; color: var(--dim);
+  }
+  .term-header .meta .cli { color: var(--accent); font-weight: 500; }
+  .term-header .meta .sep { color: var(--dimmer); }
+  .term-header .badge {
+    font-size: 10px; padding: 2px 6px; border-radius: 3px;
+    background: rgba(255,255,255,0.06); color: var(--dim);
+    border: 1px solid var(--border); white-space: nowrap;
+  }
+  .term-header .badge.model { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+
+  .term-body {
+    flex: 1; padding: 10px 12px; overflow: hidden;
+    font-family: 'Cascadia Mono', Consolas, monospace; font-size: 12px;
+    line-height: 1.45; white-space: pre-wrap; color: #d0d0d4;
+  }
+  .term-body .prompt { color: var(--accent); }
+  .term-body .path { color: #8ab4f8; }
+  .term-body .dim { color: var(--dim); }
+  .term-body .ok { color: #6bcf7f; }
+  .term-body .warn { color: #e5c07b; }
+  .term-body .err { color: #e06c75; }
+  .term-body .cursor {
+    display: inline-block; width: 7px; height: 14px; background: var(--accent);
+    vertical-align: text-bottom; animation: blink 1s steps(2) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="titlebar">
+    <span class="brand">gridterm</span>
+    <span>4 terminals</span>
+    <div class="layout">
+      <button>2</button>
+      <button>3</button>
+      <button class="active">4</button>
+      <button>+</button>
+    </div>
+  </div>
+
+  <div class="grid">
+
+    <!-- Column 1: ABEL -->
+    <div class="term" style="--accent: #ff8c42;">
+      <div class="term-header">
+        <div class="dot"></div>
+        <div class="info">
+          <div class="project">ABEL</div>
+          <div class="meta">
+            <span class="cli">claude-code</span>
+            <span class="sep">·</span>
+            <span>H:\...\ABEL</span>
+          </div>
+        </div>
+        <span class="badge model">opus 4.7</span>
+      </div>
+      <div class="term-body"><span class="dim">> restarting server on 8004...</span>
+<span class="ok">[uvicorn]</span> Started server process
+<span class="ok">[uvicorn]</span> Application startup complete
+<span class="ok">[uvicorn]</span> Uvicorn running on http://127.0.0.1:8004
+
+<span class="prompt">abel ›</span> add motion mode toggle to sidebar
+<span class="dim">⏺ Reading src/ui/sidebar.tsx...</span>
+<span class="dim">⏺ Editing src/ui/sidebar.tsx (+12 -0)</span>
+<span class="cursor"></span></div>
+    </div>
+
+    <!-- Column 2: vob-next -->
+    <div class="term" style="--accent: #7c9eff;">
+      <div class="term-header">
+        <div class="dot"></div>
+        <div class="info">
+          <div class="project">vob-next</div>
+          <div class="meta">
+            <span class="cli">pnpm dev</span>
+            <span class="sep">·</span>
+            <span>H:\...\vob-next</span>
+          </div>
+        </div>
+        <span class="badge">tauri</span>
+      </div>
+      <div class="term-body"><span class="ok">VITE v5.4.1</span>  ready in 412 ms
+
+  ➜  Local:   <span class="path">http://localhost:1420/</span>
+  ➜  Network: use --host to expose
+
+<span class="dim">[hmr]</span> src/lib/editor/tiptap.ts updated
+<span class="dim">[hmr]</span> src/routes/browse.svelte updated
+<span class="ok">✓</span> reloaded in 84ms
+
+<span class="cursor"></span></div>
+    </div>
+
+    <!-- Column 3: ghostshot -->
+    <div class="term" style="--accent: #b967ff;">
+      <div class="term-header">
+        <div class="dot"></div>
+        <div class="info">
+          <div class="project">ghostshot</div>
+          <div class="meta">
+            <span class="cli">claude-code</span>
+            <span class="sep">·</span>
+            <span>H:\...\GhostShot</span>
+          </div>
+        </div>
+        <span class="badge model">sonnet 4.6</span>
+      </div>
+      <div class="term-body"><span class="prompt">ghostshot ›</span> the grok imagine call is 429ing
+<span class="dim">⏺ Reading functions/api/grok.ts...</span>
+<span class="dim">⏺ Checking rate limits in CF dashboard</span>
+
+The issue is that we're not backing off on 429.
+Let me add exponential retry:
+
+<span class="dim">⏺ Editing functions/api/grok.ts</span>
+<span class="warn">⚠</span> waiting for approval...
+<span class="cursor"></span></div>
+    </div>
+
+    <!-- Column 4: comfyblockout -->
+    <div class="term" style="--accent: #4ade80;">
+      <div class="term-header">
+        <div class="dot"></div>
+        <div class="info">
+          <div class="project">comfyblockout</div>
+          <div class="meta">
+            <span class="cli">cmd</span>
+            <span class="sep">·</span>
+            <span>H:\...\ComfyBlockout</span>
+          </div>
+        </div>
+        <span class="badge">idle</span>
+      </div>
+      <div class="term-body">Microsoft Windows [Version 10.0.26200]
+(c) Microsoft Corporation. All rights reserved.
+
+<span class="path">H:\claudecode-projects\ComfyBlockout></span> git status
+On branch main
+Your branch is up to date with 'origin/main'.
+
+nothing to commit, working tree clean
+
+<span class="path">H:\claudecode-projects\ComfyBlockout></span> <span class="cursor"></span></div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

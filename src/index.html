@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>gridterm</title>
+    <link rel="stylesheet" href="vendor/xterm.css" />
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="/main.js" defer></script>
+  </head>
+  <body>
+    <div class="app">
+      <div class="titlebar">
+        <span class="brand">gridterm</span>
+        <span id="term-count">4 terminals</span>
+        <div class="titlebar-right">
+          <div class="col-picker" id="col-picker">
+            <button data-n="1" aria-label="1 column"></button>
+            <button data-n="2" aria-label="2 columns"></button>
+            <button data-n="3" aria-label="3 columns"></button>
+            <button data-n="4" aria-label="4 columns"></button>
+          </div>
+        </div>
+      </div>
+      <div class="grid" id="grid"></div>
+    </div>
+  </body>
+</html>
