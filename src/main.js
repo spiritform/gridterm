@@ -2,6 +2,7 @@ import { Terminal } from './vendor/xterm/xterm.mjs';
 import { FitAddon } from './vendor/addon-fit/addon-fit.mjs';
 import { Unicode11Addon } from './vendor/addon-unicode11/addon-unicode11.mjs';
 import { WebglAddon } from './vendor/addon-webgl/addon-webgl.mjs';
+import { WebLinksAddon } from './vendor/addon-web-links/addon-web-links.mjs';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -50,6 +51,20 @@ function applyColorFromInput(type, slotIdx, hex) {
     if (inp) inp.value = hex;
     if (hexEl) { hexEl.value = hex; hexEl.classList.remove('invalid'); }
   }
+}
+
+const DEFAULT_DIM_INACTIVE = true;
+function loadDimInactive() {
+  const raw = localStorage.getItem('gridterm.dimInactive');
+  if (raw === null) return DEFAULT_DIM_INACTIVE;
+  return raw === 'true';
+}
+function saveDimInactive(on) {
+  localStorage.setItem('gridterm.dimInactive', on ? 'true' : 'false');
+}
+function applyDimInactive(on) {
+  saveDimInactive(on);
+  document.body.classList.toggle('dim-inactive-off', !on);
 }
 
 const DEFAULT_FONT_SIZE = 13;
@@ -337,10 +352,36 @@ async function mountTerminal(col, colEl, bodyEl) {
   });
   const fit = new FitAddon();
   const unicode11 = new Unicode11Addon();
+  const webLinks = new WebLinksAddon((event, uri) => {
+    if (event.ctrlKey || event.metaKey || event.button === 1) {
+      invoke('plugin:opener|open_url', { url: uri }).catch(() => {});
+    }
+  });
   term.loadAddon(fit);
   term.loadAddon(unicode11);
+  term.loadAddon(webLinks);
   term.unicode.activeVersion = '11';
   term.open(bodyEl);
+
+  term.attachCustomKeyEventHandler((e) => {
+    if (e.type !== 'keydown') return true;
+    if (e.ctrlKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) {
+      const sel = term.getSelection();
+      if (sel) {
+        navigator.clipboard.writeText(sel).catch(() => {});
+        return false;
+      }
+    }
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'C' || e.key === 'c')) {
+      const sel = term.getSelection();
+      if (sel) {
+        navigator.clipboard.writeText(sel).catch(() => {});
+        term.clearSelection();
+        return false;
+      }
+    }
+    return true;
+  });
 
   // WebGL renderer — sharper subpixel text than the default canvas renderer.
   try {
@@ -527,8 +568,18 @@ async function mountTerminal(col, colEl, bodyEl) {
       e.currentTarget.blur();
     }
   });
+  // Auto-select the whole path on focus so pasting a new one replaces it
+  // instead of appending — no need to backspace first.
+  cwdEl.addEventListener('focus', () => {
+    const sel = window.getSelection();
+    if (!sel) return;
+    const range = document.createRange();
+    range.selectNodeContents(cwdEl);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  });
 
-  return { term, fit };
+  return { term, fit, refit: fitNoScrollbarReserve };
 }
 
 function findFocusedColumn() {
@@ -577,32 +628,23 @@ function wireImagePaste() {
     true,
   );
 
-  // Fallback: Ctrl+V via async clipboard API — some clipboard sources (e.g.
-  // Snipping Tool bitmaps) don't populate clipboardData.items in WebView2.
+  // Fallback: Ctrl+V through a Rust-side clipboard read — catches images that
+  // WebView2 doesn't expose via clipboardData (e.g. Snipping Tool bitmaps)
+  // without ever triggering the browser clipboard permission prompt.
   document.addEventListener(
     'keydown',
     async (e) => {
       if (!(e.ctrlKey && (e.key === 'v' || e.key === 'V'))) return;
       try {
-        const items = await navigator.clipboard.read();
-        for (const item of items) {
-          for (const type of item.types) {
-            if (type.startsWith('image/')) {
-              const blob = await item.getType(type);
-              const buf = await blob.arrayBuffer();
-              const bytes = Array.from(new Uint8Array(buf));
-              const target = findFocusedColumn();
-              if (!target) return;
-              const path = await invoke('save_paste_image', { bytes });
-              await invoke('write_pty', { id: target.col.id, data: path });
-              e.preventDefault();
-              e.stopPropagation();
-              return;
-            }
-          }
-        }
+        const path = await invoke('read_clipboard_image');
+        if (!path) return;
+        const target = findFocusedColumn();
+        if (!target) return;
+        await invoke('write_pty', { id: target.col.id, data: path });
+        e.preventDefault();
+        e.stopPropagation();
       } catch (_) {
-        // No permission or non-image clipboard — let xterm handle text paste.
+        // No image on the clipboard — let xterm handle text paste.
       }
     },
     true,
@@ -635,28 +677,44 @@ function updateCount() {
   }
 }
 
+// Cell metrics change with font size/weight/family. xterm re-measures the char
+// size on the next frame, so we wait a couple rAFs before refitting — otherwise
+// the fit reads stale cell width and columns end up short (leaving a padding
+// gap on the right until the next resize). Also clear the WebGL texture atlas
+// so cached glyphs at the old metrics don't render.
+async function refitAfterFontChange() {
+  for (const m of mounted) {
+    if (!m.term) continue;
+    try { m.term.clearTextureAtlas?.(); } catch (_) {}
+  }
+  await new Promise((r) => requestAnimationFrame(r));
+  await new Promise((r) => requestAnimationFrame(r));
+  for (const m of mounted) {
+    if (!m.term) continue;
+    try {
+      if (m.refit) m.refit();
+      else if (m.fit) m.fit.fit();
+      invoke('resize_pty', { id: m.col.id, cols: m.term.cols, rows: m.term.rows });
+    } catch (_) {}
+  }
+}
+
 function applyFontSize(size) {
   saveFontSize(size);
   for (const m of mounted) {
     if (!m.term) continue;
-    try {
-      m.term.options.fontSize = size;
-      if (m.fit) m.fit.fit();
-      invoke('resize_pty', { id: m.col.id, cols: m.term.cols, rows: m.term.rows });
-    } catch (_) {}
+    try { m.term.options.fontSize = size; } catch (_) {}
   }
+  refitAfterFontChange();
 }
 
 function applyFontWeight(weight) {
   saveFontWeight(weight);
   for (const m of mounted) {
     if (!m.term) continue;
-    try {
-      m.term.options.fontWeight = weight;
-      if (m.fit) m.fit.fit();
-      invoke('resize_pty', { id: m.col.id, cols: m.term.cols, rows: m.term.rows });
-    } catch (_) {}
+    try { m.term.options.fontWeight = weight; } catch (_) {}
   }
+  refitAfterFontChange();
 }
 
 function applyFontFamily(id) {
@@ -664,12 +722,9 @@ function applyFontFamily(id) {
   const stack = currentFontStack();
   for (const m of mounted) {
     if (!m.term) continue;
-    try {
-      m.term.options.fontFamily = stack;
-      if (m.fit) m.fit.fit();
-      invoke('resize_pty', { id: m.col.id, cols: m.term.cols, rows: m.term.rows });
-    } catch (_) {}
+    try { m.term.options.fontFamily = stack; } catch (_) {}
   }
+  refitAfterFontChange();
 }
 
 function applySlotBg(slotIdx, hex) {
@@ -722,10 +777,20 @@ function wireSettingsModal() {
     .map((f) => `<option value="${f.id}">${f.label}</option>`)
     .join('');
 
+  const dimButtons = document.querySelectorAll('.seg-btn[data-dim]');
+  const syncDimButtons = () => {
+    const on = loadDimInactive();
+    for (const b of dimButtons) {
+      const active = (b.dataset.dim === 'on') === on;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-checked', active ? 'true' : 'false');
+    }
+  };
   const syncFromStorage = () => {
     input.value = String(loadFontSize());
     weightSel.value = String(loadFontWeight());
     familySel.value = loadFontFamilyId();
+    syncDimButtons();
     for (const inp of document.querySelectorAll('[data-slot-input]')) {
       const idx = parseInt(inp.dataset.slotInput, 10);
       const bg = loadSlotBg(idx);
@@ -776,6 +841,12 @@ function wireSettingsModal() {
   familySel.addEventListener('change', () => {
     if (FONT_FAMILIES.some((f) => f.id === familySel.value)) applyFontFamily(familySel.value);
   });
+  for (const b of dimButtons) {
+    b.addEventListener('click', () => {
+      applyDimInactive(b.dataset.dim === 'on');
+      syncDimButtons();
+    });
+  }
 
   const normalizeHex = (raw) => {
     let s = raw.trim().toLowerCase();
@@ -894,6 +965,7 @@ function wireSettingsModal() {
     applyFontSize(DEFAULT_FONT_SIZE);
     applyFontWeight(DEFAULT_FONT_WEIGHT);
     applyFontFamily(DEFAULT_FONT_FAMILY_ID);
+    applyDimInactive(DEFAULT_DIM_INACTIVE);
     for (let i = 0; i < 3; i++) {
       applySlotBg(i, BASE_BG);
       applySlotFg(i, BASE_FG);
@@ -926,7 +998,7 @@ async function addColumn(col) {
     bodyEl.style.color = '#e06c75';
     bodyEl.style.padding = '12px';
     bodyEl.style.fontFamily = 'Cascadia Mono, Consolas, monospace';
-    entry = { col, colEl, term: null, fit: null };
+    entry = { col, colEl, term: null, fit: null, refit: null };
   }
   // Slot-ordered insert into mounted[]
   let idx = mounted.findIndex((m) => (m.col.slotIdx ?? -1) > (col.slotIdx ?? -1));
@@ -979,6 +1051,7 @@ async function main() {
   wireGridDrop();
   wireImagePaste();
   wireSettingsModal();
+  applyDimInactive(loadDimInactive());
 
   let home;
   try { home = await homeDir(); } catch (_) { home = 'C:\\'; }

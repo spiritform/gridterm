@@ -150,6 +150,35 @@ fn save_paste_image(bytes: Vec<u8>) -> Result<String, String> {
     Ok(dir.to_string_lossy().to_string())
 }
 
+// Reads a bitmap image from the OS clipboard (e.g. Windows Snipping Tool),
+// encodes it as PNG, and saves it to the same temp dir as `save_paste_image`.
+// Returns the saved path, or an empty string if the clipboard has no image.
+// Runs entirely on the Rust side so the WebView never has to prompt for
+// clipboard permission.
+#[tauri::command]
+fn read_clipboard_image() -> Result<String, String> {
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    let img = match clipboard.get_image() {
+        Ok(img) => img,
+        Err(_) => return Ok(String::new()),
+    };
+    let width = img.width as u32;
+    let height = img.height as u32;
+    let buffer: image::RgbaImage =
+        image::ImageBuffer::from_raw(width, height, img.bytes.into_owned())
+            .ok_or_else(|| "invalid clipboard bitmap".to_string())?;
+    let mut dir = std::env::temp_dir();
+    dir.push("gridterm");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+    dir.push(format!("paste-{}.png", ts));
+    buffer.save(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
 fn descendant_status(sys: &System, root: Pid) -> &'static str {
     let mut queue = vec![root];
     let mut seen: HashSet<Pid> = HashSet::new();
@@ -210,7 +239,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            spawn_pty, write_pty, resize_pty, kill_pty, save_paste_image
+            spawn_pty, write_pty, resize_pty, kill_pty, save_paste_image, read_clipboard_image
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
