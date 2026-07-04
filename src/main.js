@@ -600,7 +600,11 @@ async function tryPasteImageFromClipboardItems(items, targetCol) {
       const buf = await blob.arrayBuffer();
       const bytes = Array.from(new Uint8Array(buf));
       const path = await invoke('save_paste_image', { bytes });
-      await invoke('write_pty', { id: targetCol.col.id, data: path });
+      // term.paste() wraps in bracketed-paste sequences when the app enabled
+      // that mode (Claude Code does), which makes Claude Code recognize the
+      // path as a paste and render it as `[Image #N]` instead of the raw path.
+      if (targetCol.term) targetCol.term.paste(path);
+      else await invoke('write_pty', { id: targetCol.col.id, data: path });
       return true;
     }
   }
@@ -628,27 +632,59 @@ function wireImagePaste() {
     true,
   );
 
-  // Fallback: Ctrl+V through a Rust-side clipboard read — catches images that
-  // WebView2 doesn't expose via clipboardData (e.g. Snipping Tool bitmaps)
-  // without ever triggering the browser clipboard permission prompt.
+  // Ctrl+Shift+V: Rust-side clipboard fallback for images that WebView2
+  // doesn't expose via clipboardData (e.g. Snipping Tool DIBs). Plain Ctrl+V
+  // is left alone so browser paste + xterm's native paste handler run
+  // uninterrupted — otherwise arboard's OpenClipboard races the paste
+  // event and Ctrl+V misses text paste in bracketed-paste apps like Claude
+  // Code (Ctrl+Shift+V slipped through, Ctrl+V didn't).
   document.addEventListener(
     'keydown',
     async (e) => {
-      if (!(e.ctrlKey && (e.key === 'v' || e.key === 'V'))) return;
+      if (!(e.ctrlKey && e.shiftKey && (e.key === 'v' || e.key === 'V'))) return;
       try {
         const path = await invoke('read_clipboard_image');
         if (!path) return;
         const target = findFocusedColumn();
-        if (!target) return;
-        await invoke('write_pty', { id: target.col.id, data: path });
+        if (!target || !target.term) return;
+        target.term.paste(path);
         e.preventDefault();
         e.stopPropagation();
-      } catch (_) {
-        // No image on the clipboard — let xterm handle text paste.
-      }
+      } catch (_) {}
     },
     true,
   );
+}
+
+// Tauri intercepts OS-level file drops before HTML5 drag events fire, so we
+// hook the `tauri://drag-drop` event instead. Drop an image on any column to
+// paste its path into that column's PTY (Claude Code reads it from disk).
+function wireImageDrop() {
+  const IMG_RE = /\.(png|jpe?g|gif|webp|bmp|tiff?|avif|heic|svg)$/i;
+  listen('tauri://drag-drop', async (e) => {
+    const payload = e.payload || {};
+    const paths = payload.paths || [];
+    if (!paths.length) return;
+    const imagePaths = paths.filter((p) => IMG_RE.test(p));
+    if (!imagePaths.length) return;
+
+    // Position comes in physical pixels; convert to CSS coords for hit-testing.
+    const dpr = window.devicePixelRatio || 1;
+    const cssX = (payload.position?.x ?? 0) / dpr;
+    const cssY = (payload.position?.y ?? 0) / dpr;
+    let target = null;
+    const hit = document.elementFromPoint(cssX, cssY);
+    const colEl = hit && hit.closest('.term');
+    if (colEl) target = mounted.find((m) => m.colEl === colEl);
+    if (!target) target = findFocusedColumn();
+    if (!target || !target.term) return;
+
+    // term.paste() wraps in bracketed paste when the running app enabled it,
+    // so Claude Code shows `[Image #N]` instead of the raw disk path.
+    for (const p of imagePaths) {
+      target.term.paste(p);
+    }
+  });
 }
 
 const mounted = [];
@@ -1050,6 +1086,7 @@ async function main() {
   wireWindowControls();
   wireGridDrop();
   wireImagePaste();
+  wireImageDrop();
   wireSettingsModal();
   applyDimInactive(loadDimInactive());
 
