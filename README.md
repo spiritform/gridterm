@@ -2,7 +2,7 @@
 
 **gridterm is a lightweight terminal grid for Windows.** It puts up to 3 real shells side by side in one window, each with a labeled header showing project name, working directory, and a color-coded dot — so you always know which terminal is which.
 
-![gridterm screenshot](docs/screenshot-0.1.6.png)
+![gridterm screenshot](docs/screenshot-0.1.8.png)
 
 ## Why
 
@@ -18,6 +18,26 @@ Juggling identical black `cmd` windows is a pain. They all say "Command Prompt" 
 - **Persistent slots** — each column's project name + cwd survive restarts (stored in localStorage)
 - **Drag to reorder** — grab any header, drop it on another column
 - **Image paste** — paste a screenshot into a terminal and it lands as a temp `.png` path, ready for Claude Code to read
+- **Settings panel** — click the gear in the top bar to open a bottom sheet with font and color controls (see below)
+
+## Settings
+
+Click the ⚙️ icon in the top bar (right side, before the window controls) to slide up the Settings panel. Everything applies live so you can see changes as you make them.
+
+### Fonts
+- **Font** — Cascadia Code, JetBrains Mono, Consolas, Menlo, SF Mono, Courier New, Ubuntu Mono, Fira Code (monospace fonts only — proportional fonts break terminal column alignment)
+- **Font size** — 8 to 32, with `−` / `+` steppers
+- **Font weight** — Light, Regular, Medium, Semibold, Bold
+
+### Colors
+Each terminal has three colors, editable via swatch or hex text field (copy-pasteable between rows):
+- **Accent** — the top border stripe and header dot
+- **Background color** — the terminal body background
+- **Text color** — the default xterm foreground
+
+The vertical **chain link** buttons between color columns sync that color type across all three terminals — click once to link (all three snap to Terminal 1's value), click again to unlink. Individual edits then apply to every linked terminal at once.
+
+The **↺ Reset defaults** icon in the header restores fonts and every color to gridterm's built-in defaults. The **✓ Save settings** icon dismisses the panel (settings are always persisted live to localStorage).
 
 ## Install (Windows)
 
