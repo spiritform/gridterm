@@ -10,6 +10,118 @@ const { homeDir } = window.__TAURI__.path;
 
 const DEFAULT_ACCENTS = ['#ff8c42', '#4ade80', '#7c9eff'];
 
+function loadSlotAccent(slotIdx) {
+  const raw = localStorage.getItem(`gridterm.accent.${slotIdx}`);
+  if (raw && /^#[0-9a-fA-F]{6}$/.test(raw)) return raw;
+  return DEFAULT_ACCENTS[slotIdx] || '#7c9eff';
+}
+function saveSlotAccent(slotIdx, hex) {
+  if (hex === DEFAULT_ACCENTS[slotIdx]) localStorage.removeItem(`gridterm.accent.${slotIdx}`);
+  else localStorage.setItem(`gridterm.accent.${slotIdx}`, hex);
+}
+
+const LINK_TYPES = ['accent', 'bg', 'fg'];
+function isLinked(type) {
+  return localStorage.getItem(`gridterm.linked.${type}`) === 'true';
+}
+function setLinkedState(type, val) {
+  if (val) localStorage.setItem(`gridterm.linked.${type}`, 'true');
+  else localStorage.removeItem(`gridterm.linked.${type}`);
+}
+function inputAttrsForType(type) {
+  if (type === 'accent') return { inp: 'slot-accent-input', hex: 'slot-accent-hex' };
+  if (type === 'bg') return { inp: 'slot-input', hex: 'slot-hex' };
+  return { inp: 'slot-fg-input', hex: 'slot-fg-hex' };
+}
+function applyByType(type, slotIdx, hex) {
+  if (type === 'accent') return applySlotAccent(slotIdx, hex);
+  if (type === 'bg') return applySlotBg(slotIdx, hex);
+  return applySlotFg(slotIdx, hex);
+}
+function applyColorFromInput(type, slotIdx, hex) {
+  applyByType(type, slotIdx, hex);
+  if (!isLinked(type)) return;
+  const { inp: inpAttr, hex: hexAttr } = inputAttrsForType(type);
+  for (let i = 0; i < 3; i++) {
+    if (i === slotIdx) continue;
+    applyByType(type, i, hex);
+    const inp = document.querySelector(`[data-${inpAttr}="${i}"]`);
+    const hexEl = document.querySelector(`[data-${hexAttr}="${i}"]`);
+    if (inp) inp.value = hex;
+    if (hexEl) { hexEl.value = hex; hexEl.classList.remove('invalid'); }
+  }
+}
+
+const DEFAULT_FONT_SIZE = 13;
+function loadFontSize() {
+  const raw = parseInt(localStorage.getItem('gridterm.fontSize'), 10);
+  if (Number.isFinite(raw) && raw >= 8 && raw <= 32) return raw;
+  return DEFAULT_FONT_SIZE;
+}
+function saveFontSize(n) {
+  localStorage.setItem('gridterm.fontSize', String(n));
+}
+
+const DEFAULT_FONT_WEIGHT = 500;
+const FONT_WEIGHTS = [300, 400, 500, 600, 700];
+function loadFontWeight() {
+  const raw = parseInt(localStorage.getItem('gridterm.fontWeight'), 10);
+  if (FONT_WEIGHTS.includes(raw)) return raw;
+  return DEFAULT_FONT_WEIGHT;
+}
+function saveFontWeight(n) {
+  localStorage.setItem('gridterm.fontWeight', String(n));
+}
+
+const FONT_FAMILIES = [
+  { id: 'cascadia', label: 'Cascadia Code', stack: '"Cascadia Code", "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace' },
+  { id: 'jetbrains', label: 'JetBrains Mono', stack: '"JetBrains Mono", "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace' },
+  { id: 'consolas', label: 'Consolas', stack: 'Consolas, "Cascadia Mono", Menlo, monospace' },
+  { id: 'menlo', label: 'Menlo', stack: 'Menlo, "SF Mono", Consolas, monospace' },
+  { id: 'sfmono', label: 'SF Mono', stack: '"SF Mono", Menlo, Consolas, monospace' },
+  { id: 'courier', label: 'Courier New', stack: '"Courier New", Courier, monospace' },
+  { id: 'ubuntu', label: 'Ubuntu Mono', stack: '"Ubuntu Mono", Consolas, monospace' },
+  { id: 'firacode', label: 'Fira Code', stack: '"Fira Code", Consolas, monospace' },
+];
+const DEFAULT_FONT_FAMILY_ID = 'cascadia';
+function loadFontFamilyId() {
+  const raw = localStorage.getItem('gridterm.fontFamily');
+  if (raw && FONT_FAMILIES.some((f) => f.id === raw)) return raw;
+  return DEFAULT_FONT_FAMILY_ID;
+}
+function saveFontFamilyId(id) {
+  localStorage.setItem('gridterm.fontFamily', id);
+}
+function currentFontStack() {
+  return (FONT_FAMILIES.find((f) => f.id === loadFontFamilyId()) || FONT_FAMILIES[0]).stack;
+}
+
+const BASE_BG = '#131318';
+const BASE_FG = '#b8b8c0';
+
+function loadSlotBg(slotIdx) {
+  const raw = localStorage.getItem(`gridterm.bg.${slotIdx}`);
+  if (raw && /^#[0-9a-fA-F]{6}$/.test(raw)) return raw;
+  return BASE_BG;
+}
+function saveSlotBg(slotIdx, hex) {
+  if (hex === BASE_BG) localStorage.removeItem(`gridterm.bg.${slotIdx}`);
+  else localStorage.setItem(`gridterm.bg.${slotIdx}`, hex);
+}
+function loadSlotFg(slotIdx) {
+  const raw = localStorage.getItem(`gridterm.fg.${slotIdx}`);
+  if (raw && /^#[0-9a-fA-F]{6}$/.test(raw)) return raw;
+  return BASE_FG;
+}
+function saveSlotFg(slotIdx, hex) {
+  if (hex === BASE_FG) localStorage.removeItem(`gridterm.fg.${slotIdx}`);
+  else localStorage.setItem(`gridterm.fg.${slotIdx}`, hex);
+}
+function slotTheme(slotIdx) {
+  if (typeof slotIdx !== 'number') return XTERM_THEME;
+  return { ...XTERM_THEME, background: loadSlotBg(slotIdx), foreground: loadSlotFg(slotIdx), cursor: loadSlotFg(slotIdx) };
+}
+
 function loadSlotOverride(i) {
   try {
     const raw = localStorage.getItem(`gridterm.slot.${i}`);
@@ -27,13 +139,13 @@ function saveSlotOverride(i, patch) {
 }
 
 function makeDefaultColumns(home) {
-  return DEFAULT_ACCENTS.map((accent, i) => {
+  return DEFAULT_ACCENTS.map((_defaultAccent, i) => {
     const base = {
       id: `term${i + 1}`,
       project: `terminal ${i + 1}`,
       cli: 'cmd',
       cwd: home,
-      accent,
+      accent: loadSlotAccent(i),
       badge: 'shell',
     };
     const override = loadSlotOverride(i);
@@ -57,7 +169,7 @@ function makeDefaultCol(index) {
 }
 
 const XTERM_THEME = {
-  background: '#131318',
+  background: BASE_BG,
   foreground: '#b8b8c0',
   cursor: '#b8b8c0',
   cursorAccent: '#131318',
@@ -91,6 +203,9 @@ function buildColumn(col) {
   const el = document.createElement('div');
   el.className = 'term';
   el.style.setProperty('--accent', col.accent);
+  if (typeof col.slotIdx === 'number') {
+    el.style.setProperty('--tint-bg', loadSlotBg(col.slotIdx));
+  }
   el.innerHTML = `
     <div class="term-header">
       <div class="dot"></div>
@@ -164,6 +279,8 @@ function wireGridDrop() {
     if (target && target !== dragSrcColEl) {
       if (!target.classList.contains('drop-target')) {
         clearDropTargets();
+        const srcAccent = dragSrcColEl.style.getPropertyValue('--accent');
+        if (srcAccent) target.style.setProperty('--drop-accent', srcAccent);
         target.classList.add('drop-target');
       }
     } else {
@@ -183,6 +300,7 @@ function wireGridDrop() {
 function clearDropTargets() {
   for (const el of document.querySelectorAll('.term.drop-target')) {
     el.classList.remove('drop-target');
+    el.style.removeProperty('--drop-accent');
   }
 }
 
@@ -203,13 +321,13 @@ function reorderColumns(from, to) {
 
 async function mountTerminal(col, colEl, bodyEl) {
   const term = new Terminal({
-    fontFamily: '"Cascadia Code", "Cascadia Mono", "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace',
-    fontSize: 13,
-    fontWeight: 500,
+    fontFamily: currentFontStack(),
+    fontSize: loadFontSize(),
+    fontWeight: loadFontWeight(),
     fontWeightBold: 700,
     lineHeight: 1.55,
     letterSpacing: 0.3,
-    theme: XTERM_THEME,
+    theme: slotTheme(col.slotIdx),
     cursorBlink: true,
     cursorStyle: 'bar',
     cursorWidth: 2,
@@ -374,6 +492,16 @@ async function mountTerminal(col, colEl, bodyEl) {
     });
   }
 
+  // Clicking anywhere on the header focuses this terminal — no need to
+  // aim at the xterm body. Skip clicks inside the editable cwd display so
+  // path editing still works.
+  const headerEl = colEl.querySelector('.term-header');
+  headerEl.addEventListener('click', (e) => {
+    if (e.target.closest('.cwd-display')) return;
+    if (dragActivated) return;
+    term.focus();
+  });
+
   // Only the cwd is editable — titles are set by claude auto-register.
   const commitCwd = () => {
     const val = cwdEl.textContent.trim();
@@ -487,13 +615,292 @@ function updateCount() {
   const countEl = document.getElementById('term-count');
   if (countEl) countEl.textContent = `${mounted.length} terminals`;
   document.getElementById('grid').style.setProperty('--cols', mounted.length);
-  for (const btn of document.querySelectorAll('#col-picker button')) {
+  const picker = document.getElementById('col-picker');
+  const btns = Array.from(picker.querySelectorAll('button[data-n]'));
+  // Sort buttons so their order matches the on-screen column order for
+  // active slots; inactive slots trail in their original slot order.
+  const orderedActive = mounted
+    .map((m) => btns.find((b) => parseInt(b.dataset.n, 10) - 1 === m.col.slotIdx))
+    .filter(Boolean);
+  const inactive = btns
+    .filter((b) => !orderedActive.includes(b))
+    .sort((a, b) => parseInt(a.dataset.n, 10) - parseInt(b.dataset.n, 10));
+  for (const b of [...orderedActive, ...inactive]) picker.appendChild(b);
+  for (const btn of btns) {
     const slotIdx = parseInt(btn.dataset.n, 10) - 1;
     const slotCfg = COLUMNS[slotIdx];
     const active = mounted.some((m) => m.col.slotIdx === slotIdx);
     btn.classList.toggle('active', active);
     btn.style.setProperty('--dot-color', slotCfg?.accent || 'var(--text)');
   }
+}
+
+function applyFontSize(size) {
+  saveFontSize(size);
+  for (const m of mounted) {
+    if (!m.term) continue;
+    try {
+      m.term.options.fontSize = size;
+      if (m.fit) m.fit.fit();
+      invoke('resize_pty', { id: m.col.id, cols: m.term.cols, rows: m.term.rows });
+    } catch (_) {}
+  }
+}
+
+function applyFontWeight(weight) {
+  saveFontWeight(weight);
+  for (const m of mounted) {
+    if (!m.term) continue;
+    try {
+      m.term.options.fontWeight = weight;
+      if (m.fit) m.fit.fit();
+      invoke('resize_pty', { id: m.col.id, cols: m.term.cols, rows: m.term.rows });
+    } catch (_) {}
+  }
+}
+
+function applyFontFamily(id) {
+  saveFontFamilyId(id);
+  const stack = currentFontStack();
+  for (const m of mounted) {
+    if (!m.term) continue;
+    try {
+      m.term.options.fontFamily = stack;
+      if (m.fit) m.fit.fit();
+      invoke('resize_pty', { id: m.col.id, cols: m.term.cols, rows: m.term.rows });
+    } catch (_) {}
+  }
+}
+
+function applySlotBg(slotIdx, hex) {
+  saveSlotBg(slotIdx, hex);
+  for (const m of mounted) {
+    if (m.col.slotIdx !== slotIdx) continue;
+    m.colEl.style.setProperty('--tint-bg', hex);
+    if (m.term) {
+      try { m.term.options.theme = slotTheme(slotIdx); } catch (_) {}
+    }
+  }
+}
+
+function applySlotFg(slotIdx, hex) {
+  saveSlotFg(slotIdx, hex);
+  for (const m of mounted) {
+    if (m.col.slotIdx !== slotIdx) continue;
+    if (m.term) {
+      try { m.term.options.theme = slotTheme(slotIdx); } catch (_) {}
+    }
+  }
+}
+
+function applySlotAccent(slotIdx, hex) {
+  saveSlotAccent(slotIdx, hex);
+  if (COLUMNS[slotIdx]) COLUMNS[slotIdx].accent = hex;
+  for (const m of mounted) {
+    if (m.col.slotIdx !== slotIdx) continue;
+    m.col.accent = hex;
+    m.colEl.style.setProperty('--accent', hex);
+  }
+  updateCount();
+}
+
+function wireSettingsModal() {
+  const modal = document.getElementById('settings-modal');
+  const openBtn = document.getElementById('settings-btn');
+  const closeBtn = document.getElementById('settings-close');
+  const input = document.getElementById('setting-font-size');
+  const dec = document.getElementById('font-size-dec');
+  const inc = document.getElementById('font-size-inc');
+  const weightSel = document.getElementById('setting-font-weight');
+  const familySel = document.getElementById('setting-font-family');
+
+  const weightLabels = { 300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'Semibold', 700: 'Bold' };
+  weightSel.innerHTML = FONT_WEIGHTS
+    .map((w) => `<option value="${w}">${weightLabels[w]}</option>`)
+    .join('');
+  familySel.innerHTML = FONT_FAMILIES
+    .map((f) => `<option value="${f.id}">${f.label}</option>`)
+    .join('');
+
+  const syncFromStorage = () => {
+    input.value = String(loadFontSize());
+    weightSel.value = String(loadFontWeight());
+    familySel.value = loadFontFamilyId();
+    for (const inp of document.querySelectorAll('[data-slot-input]')) {
+      const idx = parseInt(inp.dataset.slotInput, 10);
+      const bg = loadSlotBg(idx);
+      inp.value = bg;
+      const hex = document.querySelector(`[data-slot-hex="${idx}"]`);
+      if (hex) { hex.value = bg; hex.classList.remove('invalid'); }
+    }
+    for (const inp of document.querySelectorAll('[data-slot-fg-input]')) {
+      const idx = parseInt(inp.dataset.slotFgInput, 10);
+      const fg = loadSlotFg(idx);
+      inp.value = fg;
+      const hex = document.querySelector(`[data-slot-fg-hex="${idx}"]`);
+      if (hex) { hex.value = fg; hex.classList.remove('invalid'); }
+    }
+    for (const inp of document.querySelectorAll('[data-slot-accent-input]')) {
+      const idx = parseInt(inp.dataset.slotAccentInput, 10);
+      const ac = loadSlotAccent(idx);
+      inp.value = ac;
+      const hex = document.querySelector(`[data-slot-accent-hex="${idx}"]`);
+      if (hex) { hex.value = ac; hex.classList.remove('invalid'); }
+    }
+  };
+  const open = () => { syncFromStorage(); modal.classList.add('open'); };
+  const close = () => { modal.classList.remove('open'); };
+  openBtn.addEventListener('click', () => {
+    modal.classList.contains('open') ? close() : open();
+  });
+  closeBtn.addEventListener('click', close);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal.classList.contains('open')) close();
+  });
+  document.getElementById('settings-save').addEventListener('click', close);
+
+  const clamp = (n) => Math.max(8, Math.min(32, n));
+  const setSize = (n) => {
+    const v = clamp(n | 0);
+    input.value = String(v);
+    applyFontSize(v);
+  };
+  input.addEventListener('change', () => setSize(parseInt(input.value, 10) || DEFAULT_FONT_SIZE));
+  dec.addEventListener('click', () => setSize((parseInt(input.value, 10) || DEFAULT_FONT_SIZE) - 1));
+  inc.addEventListener('click', () => setSize((parseInt(input.value, 10) || DEFAULT_FONT_SIZE) + 1));
+
+  weightSel.addEventListener('change', () => {
+    const v = parseInt(weightSel.value, 10);
+    if (FONT_WEIGHTS.includes(v)) applyFontWeight(v);
+  });
+  familySel.addEventListener('change', () => {
+    if (FONT_FAMILIES.some((f) => f.id === familySel.value)) applyFontFamily(familySel.value);
+  });
+
+  const normalizeHex = (raw) => {
+    let s = raw.trim().toLowerCase();
+    if (!s.startsWith('#')) s = '#' + s;
+    if (/^#[0-9a-f]{3}$/.test(s)) {
+      s = '#' + s.slice(1).split('').map((c) => c + c).join('');
+    }
+    return /^#[0-9a-f]{6}$/.test(s) ? s : null;
+  };
+  for (const inp of document.querySelectorAll('[data-slot-input]')) {
+    inp.addEventListener('input', () => {
+      const slotIdx = parseInt(inp.dataset.slotInput, 10);
+      applyColorFromInput('bg', slotIdx, inp.value);
+      const hex = document.querySelector(`[data-slot-hex="${slotIdx}"]`);
+      if (hex) { hex.value = inp.value; hex.classList.remove('invalid'); }
+    });
+  }
+  for (const hex of document.querySelectorAll('[data-slot-hex]')) {
+    hex.addEventListener('input', () => {
+      const slotIdx = parseInt(hex.dataset.slotHex, 10);
+      const norm = normalizeHex(hex.value);
+      if (!norm) { hex.classList.add('invalid'); return; }
+      hex.classList.remove('invalid');
+      applyColorFromInput('bg', slotIdx, norm);
+      const inp = document.querySelector(`[data-slot-input="${slotIdx}"]`);
+      if (inp) inp.value = norm;
+    });
+    hex.addEventListener('blur', () => {
+      const slotIdx = parseInt(hex.dataset.slotHex, 10);
+      hex.value = loadSlotBg(slotIdx);
+      hex.classList.remove('invalid');
+    });
+    hex.addEventListener('focus', () => hex.select());
+  }
+
+  for (const inp of document.querySelectorAll('[data-slot-fg-input]')) {
+    inp.addEventListener('input', () => {
+      const slotIdx = parseInt(inp.dataset.slotFgInput, 10);
+      applyColorFromInput('fg', slotIdx, inp.value);
+      const hex = document.querySelector(`[data-slot-fg-hex="${slotIdx}"]`);
+      if (hex) { hex.value = inp.value; hex.classList.remove('invalid'); }
+    });
+  }
+  for (const inp of document.querySelectorAll('[data-slot-accent-input]')) {
+    inp.addEventListener('input', () => {
+      const slotIdx = parseInt(inp.dataset.slotAccentInput, 10);
+      applyColorFromInput('accent', slotIdx, inp.value);
+      const hex = document.querySelector(`[data-slot-accent-hex="${slotIdx}"]`);
+      if (hex) { hex.value = inp.value; hex.classList.remove('invalid'); }
+    });
+  }
+  for (const hex of document.querySelectorAll('[data-slot-accent-hex]')) {
+    hex.addEventListener('input', () => {
+      const slotIdx = parseInt(hex.dataset.slotAccentHex, 10);
+      const norm = normalizeHex(hex.value);
+      if (!norm) { hex.classList.add('invalid'); return; }
+      hex.classList.remove('invalid');
+      applyColorFromInput('accent', slotIdx, norm);
+      const inp = document.querySelector(`[data-slot-accent-input="${slotIdx}"]`);
+      if (inp) inp.value = norm;
+    });
+    hex.addEventListener('blur', () => {
+      const slotIdx = parseInt(hex.dataset.slotAccentHex, 10);
+      hex.value = loadSlotAccent(slotIdx);
+      hex.classList.remove('invalid');
+    });
+    hex.addEventListener('focus', () => hex.select());
+  }
+  for (const hex of document.querySelectorAll('[data-slot-fg-hex]')) {
+    hex.addEventListener('input', () => {
+      const slotIdx = parseInt(hex.dataset.slotFgHex, 10);
+      const norm = normalizeHex(hex.value);
+      if (!norm) { hex.classList.add('invalid'); return; }
+      hex.classList.remove('invalid');
+      applyColorFromInput('fg', slotIdx, norm);
+      const inp = document.querySelector(`[data-slot-fg-input="${slotIdx}"]`);
+      if (inp) inp.value = norm;
+    });
+    hex.addEventListener('blur', () => {
+      const slotIdx = parseInt(hex.dataset.slotFgHex, 10);
+      hex.value = loadSlotFg(slotIdx);
+      hex.classList.remove('invalid');
+    });
+    hex.addEventListener('focus', () => hex.select());
+  }
+  // Link toggle buttons: syncs all 3 rows for a color type and persists state.
+  const syncLinkButtons = () => {
+    for (const type of LINK_TYPES) {
+      const on = isLinked(type);
+      for (const b of document.querySelectorAll(`.v-link[data-link="${type}"]`)) {
+        b.classList.toggle('linked', on);
+      }
+    }
+  };
+  syncLinkButtons();
+  for (const btn of document.querySelectorAll('.v-link')) {
+    btn.addEventListener('click', () => {
+      const type = btn.dataset.link;
+      const turningOn = !isLinked(type);
+      setLinkedState(type, turningOn);
+      syncLinkButtons();
+      if (turningOn) {
+        // Sync T2 and T3 to T1's current value so they visibly match.
+        const t1Val = type === 'accent' ? loadSlotAccent(0)
+                    : type === 'bg' ? loadSlotBg(0)
+                    : loadSlotFg(0);
+        applyColorFromInput(type, 0, t1Val);
+        syncFromStorage();
+      }
+    });
+  }
+
+  document.getElementById('settings-reset-all').addEventListener('click', () => {
+    for (const type of LINK_TYPES) setLinkedState(type, false);
+    syncLinkButtons();
+    applyFontSize(DEFAULT_FONT_SIZE);
+    applyFontWeight(DEFAULT_FONT_WEIGHT);
+    applyFontFamily(DEFAULT_FONT_FAMILY_ID);
+    for (let i = 0; i < 3; i++) {
+      applySlotBg(i, BASE_BG);
+      applySlotFg(i, BASE_FG);
+      applySlotAccent(i, DEFAULT_ACCENTS[i]);
+    }
+    syncFromStorage();
+  });
 }
 
 async function addColumn(col) {
@@ -571,6 +978,7 @@ async function main() {
   wireWindowControls();
   wireGridDrop();
   wireImagePaste();
+  wireSettingsModal();
 
   let home;
   try { home = await homeDir(); } catch (_) { home = 'C:\\'; }
