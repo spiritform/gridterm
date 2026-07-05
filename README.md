@@ -83,6 +83,8 @@ Installers land in `src-tauri/target/release/bundle/`:
 
 The Rust backend uses `portable-pty` which is cross-platform — the code should build for macOS without changes. Unsigned builds will trigger Gatekeeper on first launch: right-click the `.app` → **Open** → **Open anyway** to bypass. For real distribution you'll want an Apple Developer certificate to sign the bundle.
 
+Heads up: the frontend's "click cwd path → type a folder → Enter" flow sends `cd /d "<path>"`, which is cmd.exe syntax. On macOS/Linux you'll want to swap that (`commitCwd` in `src/main.js`) for plain `cd "<path>"`. Everything else — pty spawning, clipboard, image paste/drop — is platform-neutral.
+
 ## Development
 
 ```bash
