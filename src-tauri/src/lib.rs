@@ -179,6 +179,20 @@ fn read_clipboard_image() -> Result<String, String> {
     Ok(dir.to_string_lossy().to_string())
 }
 
+// Reads plain text from the OS clipboard. Returns empty string if there's
+// no text there (e.g. clipboard has only an image). Used by the frontend's
+// Ctrl+V handler so text paste doesn't depend on the browser's paste event
+// reaching xterm's helper textarea — which it doesn't reliably in WebView2
+// for the plain Ctrl+V shortcut inside bracketed-paste apps.
+#[tauri::command]
+fn read_clipboard_text() -> Result<String, String> {
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    match clipboard.get_text() {
+        Ok(t) => Ok(t),
+        Err(_) => Ok(String::new()),
+    }
+}
+
 fn descendant_status(sys: &System, root: Pid) -> &'static str {
     let mut queue = vec![root];
     let mut seen: HashSet<Pid> = HashSet::new();
@@ -239,7 +253,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            spawn_pty, write_pty, resize_pty, kill_pty, save_paste_image, read_clipboard_image
+            spawn_pty, write_pty, resize_pty, kill_pty, save_paste_image, read_clipboard_image, read_clipboard_text
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

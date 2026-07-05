@@ -53,6 +53,16 @@ function applyColorFromInput(type, slotIdx, hex) {
   }
 }
 
+const DEFAULT_AUTO_CLI = 'claude';
+function loadSlotAutoCli(slotIdx) {
+  const raw = localStorage.getItem(`gridterm.autoCli.${slotIdx}`);
+  return raw === null ? DEFAULT_AUTO_CLI : raw;
+}
+function saveSlotAutoCli(slotIdx, cmd) {
+  if (cmd === DEFAULT_AUTO_CLI) localStorage.removeItem(`gridterm.autoCli.${slotIdx}`);
+  else localStorage.setItem(`gridterm.autoCli.${slotIdx}`, cmd);
+}
+
 const DEFAULT_DIM_INACTIVE = true;
 function loadDimInactive() {
   const raw = localStorage.getItem('gridterm.dimInactive');
@@ -233,6 +243,12 @@ function buildColumn(col) {
       <div class="header-tags">
         <span class="cli">${col.cli}</span>
         <span class="badge">${col.badge}</span>
+        <button class="col-power" aria-label="run or stop CLI">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 2 v10"/>
+            <path d="M18.36 6.64 a9 9 0 1 1 -12.72 0"/>
+          </svg>
+        </button>
       </div>
     </div>
     <div class="term-body"></div>
@@ -539,9 +555,40 @@ async function mountTerminal(col, colEl, bodyEl) {
   const headerEl = colEl.querySelector('.term-header');
   headerEl.addEventListener('click', (e) => {
     if (e.target.closest('.cwd-display')) return;
+    if (e.target.closest('.col-close')) return;
     if (dragActivated) return;
     term.focus();
   });
+
+  const powerBtn = colEl.querySelector('.col-power');
+  if (powerBtn) {
+    // Swallow pointerdown so the header's drag-start handler doesn't fire.
+    powerBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+    powerBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // Shortcut for typing the configured CLI (e.g. `claude`) when idle,
+      // or Ctrl+C to stop it when it's running. State is inferred from the
+      // badge, which pty-status flips to badge-active while claude is up.
+      const isRunning = badgeEl && badgeEl.classList.contains('badge-active');
+      if (isRunning) {
+        invoke('write_pty', { id: col.id, data: '\x03' });
+      } else {
+        const cmd = typeof col.slotIdx === 'number' ? loadSlotAutoCli(col.slotIdx) : DEFAULT_AUTO_CLI;
+        if (cmd) invoke('write_pty', { id: col.id, data: cmd + '\r' });
+      }
+    });
+    // Reflect the running state on the power icon so it visually matches
+    // the badge without needing its own listener.
+    const syncPower = () => {
+      const running = badgeEl && badgeEl.classList.contains('badge-active');
+      powerBtn.classList.toggle('running', !!running);
+      powerBtn.title = running ? 'Stop (Ctrl+C)' : `Run ${loadSlotAutoCli(col.slotIdx ?? 0) || 'shell'}`;
+    };
+    syncPower();
+    if (badgeEl) {
+      new MutationObserver(syncPower).observe(badgeEl, { attributes: true, attributeFilter: ['class'] });
+    }
+  }
 
   // Only the cwd is editable — titles are set by claude auto-register.
   const commitCwd = () => {
@@ -632,24 +679,36 @@ function wireImagePaste() {
     true,
   );
 
-  // Ctrl+Shift+V: Rust-side clipboard fallback for images that WebView2
-  // doesn't expose via clipboardData (e.g. Snipping Tool DIBs). Plain Ctrl+V
-  // is left alone so browser paste + xterm's native paste handler run
-  // uninterrupted — otherwise arboard's OpenClipboard races the paste
-  // event and Ctrl+V misses text paste in bracketed-paste apps like Claude
-  // Code (Ctrl+Shift+V slipped through, Ctrl+V didn't).
+  // Take over Ctrl+V entirely when the focus is on a terminal. WebView2's
+  // paste event doesn't reliably reach xterm's helper textarea for plain
+  // Ctrl+V inside bracketed-paste apps (Claude Code), so we read the
+  // clipboard from Rust and inject through term.paste() — which wraps in
+  // bracketed-paste sequences when the running app enabled them and passes
+  // raw text otherwise. Ctrl+Shift+V is left alone so the browser's native
+  // paste path stays available as a fallback.
   document.addEventListener(
     'keydown',
     async (e) => {
-      if (!(e.ctrlKey && e.shiftKey && (e.key === 'v' || e.key === 'V'))) return;
+      if (!(e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'v' || e.key === 'V'))) return;
+      const active = document.activeElement;
+      if (!active || !active.classList || !active.classList.contains('xterm-helper-textarea')) return;
+      const target = findFocusedColumn();
+      if (!target || !target.term) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // Prefer text when the clipboard has both (e.g. a spreadsheet cell
+      // copied with a bitmap fallback) — image paste only wins when the
+      // clipboard is image-only, so plain-text copy always pastes as text.
+      try {
+        const text = await invoke('read_clipboard_text');
+        if (text) {
+          target.term.paste(text);
+          return;
+        }
+      } catch (_) {}
       try {
         const path = await invoke('read_clipboard_image');
-        if (!path) return;
-        const target = findFocusedColumn();
-        if (!target || !target.term) return;
-        target.term.paste(path);
-        e.preventDefault();
-        e.stopPropagation();
+        if (path) target.term.paste(path);
       } catch (_) {}
     },
     true,
@@ -688,6 +747,11 @@ function wireImageDrop() {
 }
 
 const mounted = [];
+// Slots that were toggled off via the dot: PTY + xterm stay alive, but the
+// column element is detached from the grid so it's not visible. Re-showing
+// re-appends the same element — scrollback, running Claude session, etc.
+// all survive.
+const hidden = [];
 
 function updateCount() {
   const countEl = document.getElementById('term-count');
@@ -707,8 +771,10 @@ function updateCount() {
   for (const btn of btns) {
     const slotIdx = parseInt(btn.dataset.n, 10) - 1;
     const slotCfg = COLUMNS[slotIdx];
-    const active = mounted.some((m) => m.col.slotIdx === slotIdx);
-    btn.classList.toggle('active', active);
+    const isVisible = mounted.some((m) => m.col.slotIdx === slotIdx);
+    const isHidden = !isVisible && hidden.some((h) => h.col.slotIdx === slotIdx);
+    btn.classList.toggle('active', isVisible);
+    btn.classList.toggle('alive', isHidden);
     btn.style.setProperty('--dot-color', slotCfg?.accent || 'var(--text)');
   }
 }
@@ -735,9 +801,15 @@ async function refitAfterFontChange() {
   }
 }
 
+// Font/theme updates target both visible and hidden entries so a hidden
+// slot doesn't render with stale settings the moment it's shown again.
+function allEntries() {
+  return [...mounted, ...hidden];
+}
+
 function applyFontSize(size) {
   saveFontSize(size);
-  for (const m of mounted) {
+  for (const m of allEntries()) {
     if (!m.term) continue;
     try { m.term.options.fontSize = size; } catch (_) {}
   }
@@ -746,7 +818,7 @@ function applyFontSize(size) {
 
 function applyFontWeight(weight) {
   saveFontWeight(weight);
-  for (const m of mounted) {
+  for (const m of allEntries()) {
     if (!m.term) continue;
     try { m.term.options.fontWeight = weight; } catch (_) {}
   }
@@ -756,7 +828,7 @@ function applyFontWeight(weight) {
 function applyFontFamily(id) {
   saveFontFamilyId(id);
   const stack = currentFontStack();
-  for (const m of mounted) {
+  for (const m of allEntries()) {
     if (!m.term) continue;
     try { m.term.options.fontFamily = stack; } catch (_) {}
   }
@@ -765,7 +837,7 @@ function applyFontFamily(id) {
 
 function applySlotBg(slotIdx, hex) {
   saveSlotBg(slotIdx, hex);
-  for (const m of mounted) {
+  for (const m of allEntries()) {
     if (m.col.slotIdx !== slotIdx) continue;
     m.colEl.style.setProperty('--tint-bg', hex);
     if (m.term) {
@@ -776,7 +848,7 @@ function applySlotBg(slotIdx, hex) {
 
 function applySlotFg(slotIdx, hex) {
   saveSlotFg(slotIdx, hex);
-  for (const m of mounted) {
+  for (const m of allEntries()) {
     if (m.col.slotIdx !== slotIdx) continue;
     if (m.term) {
       try { m.term.options.theme = slotTheme(slotIdx); } catch (_) {}
@@ -787,7 +859,7 @@ function applySlotFg(slotIdx, hex) {
 function applySlotAccent(slotIdx, hex) {
   saveSlotAccent(slotIdx, hex);
   if (COLUMNS[slotIdx]) COLUMNS[slotIdx].accent = hex;
-  for (const m of mounted) {
+  for (const m of allEntries()) {
     if (m.col.slotIdx !== slotIdx) continue;
     m.col.accent = hex;
     m.colEl.style.setProperty('--accent', hex);
@@ -847,6 +919,14 @@ function wireSettingsModal() {
       inp.value = ac;
       const hex = document.querySelector(`[data-slot-accent-hex="${idx}"]`);
       if (hex) { hex.value = ac; hex.classList.remove('invalid'); }
+    }
+    for (const inp of document.querySelectorAll('[data-auto-cli-input]')) {
+      const idx = parseInt(inp.dataset.autoCliInput, 10);
+      inp.value = loadSlotAutoCli(idx);
+    }
+    for (const dot of document.querySelectorAll('[data-auto-cli-dot]')) {
+      const idx = parseInt(dot.dataset.autoCliDot, 10);
+      dot.style.background = loadSlotAccent(idx);
     }
   };
   const open = () => { syncFromStorage(); modal.classList.add('open'); };
@@ -968,6 +1048,21 @@ function wireSettingsModal() {
     });
     hex.addEventListener('focus', () => hex.select());
   }
+  for (const inp of document.querySelectorAll('[data-auto-cli-input]')) {
+    inp.addEventListener('input', () => {
+      const slotIdx = parseInt(inp.dataset.autoCliInput, 10);
+      saveSlotAutoCli(slotIdx, inp.value);
+      // Refresh the power button tooltip on any mounted/hidden slot with this idx.
+      for (const m of allEntries()) {
+        if (m.col.slotIdx !== slotIdx) continue;
+        const pb = m.colEl.querySelector('.col-power');
+        if (pb && !pb.classList.contains('running')) {
+          pb.title = `Run ${inp.value || 'shell'}`;
+        }
+      }
+    });
+  }
+
   // Link toggle buttons: syncs all 3 rows for a color type and persists state.
   const syncLinkButtons = () => {
     for (const type of LINK_TYPES) {
@@ -1006,6 +1101,7 @@ function wireSettingsModal() {
       applySlotBg(i, BASE_BG);
       applySlotFg(i, BASE_FG);
       applySlotAccent(i, DEFAULT_ACCENTS[i]);
+      saveSlotAutoCli(i, DEFAULT_AUTO_CLI);
     }
     syncFromStorage();
   });
@@ -1014,16 +1110,7 @@ function wireSettingsModal() {
 async function addColumn(col) {
   const grid = document.getElementById('grid');
   const colEl = buildColumn(col);
-  // Insert in slot order so drag can still reorder but toggle-on lands sensibly.
-  let inserted = false;
-  for (const m of mounted) {
-    if ((m.col.slotIdx ?? -1) > (col.slotIdx ?? -1)) {
-      grid.insertBefore(colEl, m.colEl);
-      inserted = true;
-      break;
-    }
-  }
-  if (!inserted) grid.appendChild(colEl);
+  grid.appendChild(colEl);
   const bodyEl = colEl.querySelector('.term-body');
   let entry;
   try {
@@ -1036,43 +1123,68 @@ async function addColumn(col) {
     bodyEl.style.fontFamily = 'Cascadia Mono, Consolas, monospace';
     entry = { col, colEl, term: null, fit: null, refit: null };
   }
-  // Slot-ordered insert into mounted[]
-  let idx = mounted.findIndex((m) => (m.col.slotIdx ?? -1) > (col.slotIdx ?? -1));
-  if (idx < 0) idx = mounted.length;
-  mounted.splice(idx, 0, entry);
+  mounted.push(entry);
   updateCount();
 }
 
-async function removeSlot(slotIdx) {
-  const idx = mounted.findIndex((m) => m.col.slotIdx === slotIdx);
-  if (idx < 0) return;
-  const [m] = mounted.splice(idx, 1);
-  try {
-    if (m.term) m.term.dispose();
-    await invoke('kill_pty', { id: m.col.id });
-  } catch (_) {}
-  m.colEl.remove();
-  updateCount();
-}
-
-async function toggleSlot(slotIdx) {
-  const existing = mounted.find((m) => m.col.slotIdx === slotIdx);
-  if (existing) {
-    if (mounted.length <= 1) return;
-    await removeSlot(slotIdx);
-  } else {
-    const base = COLUMNS[slotIdx];
-    if (!base) return;
-    const col = { ...base, id: `${base.id}-${Date.now().toString(36)}`, slotIdx };
-    await addColumn(col);
-  }
+function refitAllVisible() {
   requestAnimationFrame(() => {
     for (const m of mounted) {
       if (!m.fit) continue;
-      m.fit.fit();
-      invoke('resize_pty', { id: m.col.id, cols: m.term.cols, rows: m.term.rows });
+      if (m.refit) m.refit();
+      else m.fit.fit();
+      if (m.term) invoke('resize_pty', { id: m.col.id, cols: m.term.cols, rows: m.term.rows });
     }
   });
+}
+
+function hideSlot(slotIdx) {
+  const idx = mounted.findIndex((m) => m.col.slotIdx === slotIdx);
+  if (idx < 0) return;
+  const [m] = mounted.splice(idx, 1);
+  m.colEl.remove();
+  hidden.push(m);
+  updateCount();
+}
+
+async function showSlot(slotIdx) {
+  const idx = hidden.findIndex((h) => h.col.slotIdx === slotIdx);
+  if (idx < 0) return;
+  const [m] = hidden.splice(idx, 1);
+  document.getElementById('grid').appendChild(m.colEl);
+  mounted.push(m);
+  updateCount();
+  // Column width almost certainly changed while hidden — do a proper
+  // scrollbar-aware refit before letting xterm redraw.
+  await new Promise((r) => requestAnimationFrame(r));
+  await new Promise((r) => requestAnimationFrame(r));
+  try {
+    if (m.refit) m.refit();
+    else if (m.fit) m.fit.fit();
+    if (m.term) invoke('resize_pty', { id: m.col.id, cols: m.term.cols, rows: m.term.rows });
+  } catch (_) {}
+}
+
+async function toggleSlot(slotIdx) {
+  if (mounted.some((m) => m.col.slotIdx === slotIdx)) {
+    // Visible → hide (session keeps running in the background).
+    if (mounted.length <= 1) return;
+    hideSlot(slotIdx);
+    refitAllVisible();
+    return;
+  }
+  if (hidden.some((h) => h.col.slotIdx === slotIdx)) {
+    // Hidden → reveal existing session, no new spawn.
+    await showSlot(slotIdx);
+    refitAllVisible();
+    return;
+  }
+  // Slot was killed (or never spawned) → fresh spawn.
+  const base = COLUMNS[slotIdx];
+  if (!base) return;
+  const col = { ...base, id: `${base.id}-${Date.now().toString(36)}`, slotIdx };
+  await addColumn(col);
+  refitAllVisible();
 }
 
 function wireWindowControls() {
