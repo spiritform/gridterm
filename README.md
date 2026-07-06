@@ -10,7 +10,7 @@ Juggling identical black `cmd` windows is a pain. They all say "Command Prompt" 
 
 ## Features
 
-- **1–4 columns** — toggle each one on/off from the top bar
+- **1–3 columns** — toggle each one on/off from the top bar
 - **Live cwd tracking** — the title updates to the current folder's basename as you `cd`
 - **Editable paths** — click the cwd under any title and type a new folder; the terminal actually `cd`s there
 - **Claude Code detection** — badge flips to `running` when `claude` is running in that shell
