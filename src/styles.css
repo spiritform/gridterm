@@ -79,10 +79,6 @@ html, body {
 .col-picker button.alive {
   border-color: color-mix(in srgb, var(--dot-color, var(--text)) 22%, var(--border));
 }
-.col-picker button.alive::after {
-  background: color-mix(in srgb, var(--dot-color, var(--text)) 45%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--dot-color, var(--text)) 30%, transparent);
-}
 .col-picker button.alive:hover {
   background: color-mix(in srgb, var(--dot-color, var(--text)) 6%, transparent);
 }
@@ -464,11 +460,11 @@ body:has(.settings-panel.open) .term-body { opacity: 1 !important; }
   background: rgba(255,255,255,0.06);
 }
 .term-header .col-power.running {
-  color: var(--accent);
+  color: var(--text);
 }
 .term-header .col-power.running:hover {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+  background: rgba(255,255,255,0.08);
 }
 
 .term-body {

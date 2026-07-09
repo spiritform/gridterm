@@ -498,10 +498,24 @@ async function mountTerminal(col, colEl, bodyEl) {
 
   await listen(`pty-data-${col.id}`, (e) => {
     term.write(e.payload);
+    // Alt-screen enter/exit is a reliable signal that a TUI (claude, vim, etc.)
+    // is running, independent of the sysinfo child-process walk which can miss
+    // Windows process trees. Feeds the power button's running state.
+    const data = e.payload;
+    if (data.includes('\x1b[?1049h') || data.includes('\x1b[?47h')) {
+      col._altScreen = true;
+      col._syncPower?.();
+    } else if (data.includes('\x1b[?1049l') || data.includes('\x1b[?47l')) {
+      col._altScreen = false;
+      col._syncPower?.();
+    }
   });
 
   await listen(`pty-close-${col.id}`, () => {
     term.write('\r\n\x1b[90m[process exited]\x1b[0m\r\n');
+    col._altScreen = false;
+    col._claudeIntent = false;
+    col._syncPower?.();
   });
 
   const cliEl = colEl.querySelector('.cli');
@@ -564,26 +578,54 @@ async function mountTerminal(col, colEl, bodyEl) {
   if (powerBtn) {
     // Swallow pointerdown so the header's drag-start handler doesn't fire.
     powerBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+    const isRunningNow = () =>
+      (badgeEl && badgeEl.classList.contains('badge-active')) ||
+      col._altScreen === true ||
+      col._claudeIntent === true;
     powerBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      // Shortcut for typing the configured CLI (e.g. `claude`) when idle,
-      // or Ctrl+C to stop it when it's running. State is inferred from the
-      // badge, which pty-status flips to badge-active while claude is up.
-      const isRunning = badgeEl && badgeEl.classList.contains('badge-active');
-      if (isRunning) {
+      if (powerBtn.dataset.stopping === '1') return;
+      if (isRunningNow()) {
+        // Claude Code needs two Ctrl+Cs to exit: the first prompts "Press
+        // Ctrl-C again to exit", the second actually quits. Space them so
+        // claude has time to render the prompt between them.
+        powerBtn.dataset.stopping = '1';
         invoke('write_pty', { id: col.id, data: '\x03' });
+        setTimeout(() => {
+          invoke('write_pty', { id: col.id, data: '\x03' });
+          if (badgeEl) {
+            badgeEl.textContent = col.badge;
+            badgeEl.classList.remove('badge-active');
+          }
+          if (cliEl) cliEl.textContent = col.cli;
+          col._claudeIntent = false;
+          delete powerBtn.dataset.stopping;
+          col._syncPower?.();
+        }, 250);
       } else {
         const cmd = typeof col.slotIdx === 'number' ? loadSlotAutoCli(col.slotIdx) : DEFAULT_AUTO_CLI;
-        if (cmd) invoke('write_pty', { id: col.id, data: cmd + '\r' });
+        if (!cmd) return;
+        // Resume in the folder currently shown in the header — cd first in case
+        // the shell has drifted, then continue the most recent claude session.
+        const currentCwd = (cwdEl?.title || cwdEl?.textContent || '').trim();
+        if (currentCwd) {
+          invoke('write_pty', { id: col.id, data: `cd /d "${currentCwd}"\r` });
+        }
+        const resumeCmd = cmd === 'claude' ? 'claude --continue' : cmd;
+        invoke('write_pty', { id: col.id, data: resumeCmd + '\r' });
+        col._claudeIntent = true;
+        col._syncPower?.();
       }
     });
-    // Reflect the running state on the power icon so it visually matches
-    // the badge without needing its own listener.
+    // Reflect the running state on the power icon. Combines the sysinfo badge
+    // with two frontend signals (alt-screen + intent) so the button stays
+    // correct even when the process poller misses claude on Windows.
     const syncPower = () => {
-      const running = badgeEl && badgeEl.classList.contains('badge-active');
+      const running = isRunningNow();
       powerBtn.classList.toggle('running', !!running);
       powerBtn.title = running ? 'Stop (Ctrl+C)' : `Run ${loadSlotAutoCli(col.slotIdx ?? 0) || 'shell'}`;
     };
+    col._syncPower = syncPower;
     syncPower();
     if (badgeEl) {
       new MutationObserver(syncPower).observe(badgeEl, { attributes: true, attributeFilter: ['class'] });
