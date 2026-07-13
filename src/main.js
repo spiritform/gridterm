@@ -613,6 +613,9 @@ async function mountTerminal(col, colEl, bodyEl) {
         }
         const resumeCmd = cmd === 'claude' ? 'claude --continue' : cmd;
         invoke('write_pty', { id: col.id, data: resumeCmd + '\r' });
+        // Snap to the live prompt so the user sees claude spin up even if they'd
+        // scrolled up in the previous session's history.
+        try { term.scrollToBottom(); } catch (_) {}
         col._claudeIntent = true;
         col._syncPower?.();
       }
@@ -758,15 +761,15 @@ function wireImagePaste() {
 }
 
 // Tauri intercepts OS-level file drops before HTML5 drag events fire, so we
-// hook the `tauri://drag-drop` event instead. Drop an image on any column to
-// paste its path into that column's PTY (Claude Code reads it from disk).
+// hook the `tauri://drag-drop` event instead. Drop an image or PDF on any
+// column to paste its path into that column's PTY (Claude Code reads both).
 function wireImageDrop() {
-  const IMG_RE = /\.(png|jpe?g|gif|webp|bmp|tiff?|avif|heic|svg)$/i;
+  const DROP_RE = /\.(png|jpe?g|gif|webp|bmp|tiff?|avif|heic|svg|pdf)$/i;
   listen('tauri://drag-drop', async (e) => {
     const payload = e.payload || {};
     const paths = payload.paths || [];
     if (!paths.length) return;
-    const imagePaths = paths.filter((p) => IMG_RE.test(p));
+    const imagePaths = paths.filter((p) => DROP_RE.test(p));
     if (!imagePaths.length) return;
 
     // Position comes in physical pixels; convert to CSS coords for hit-testing.
