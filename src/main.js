@@ -463,7 +463,10 @@ async function mountTerminal(col, colEl, bodyEl) {
         cwdEl.textContent = cwd;
         cwdEl.title = cwd;
       }
-      if (projectEl && cwd && document.activeElement !== projectEl && !col.registeredProject) {
+      // Keep the title in sync with the current folder as the user cd's around,
+      // even after claude has run. Only a manually pinned title (col.manualProject)
+      // blocks the auto-update.
+      if (projectEl && cwd && document.activeElement !== projectEl && !col.manualProject) {
         const basename = cwd.split(/[\\/]/).filter(Boolean).pop() || cwd;
         projectEl.textContent = basename;
       }
@@ -1304,13 +1307,11 @@ async function main() {
   try { home = await homeDir(); } catch (_) { home = 'C:\\'; }
   COLUMNS = makeDefaultColumns(home);
 
-  // Fix grid width up front so each terminal mounts at its final column width;
-  // otherwise the first columns spawn wider than they'll end up, and their
-  // PTY cols stay stale after the grid shrinks.
-  document.getElementById('grid').style.setProperty('--cols', COLUMNS.length);
-  for (let i = 0; i < COLUMNS.length; i++) {
-    await addColumn({ ...COLUMNS[i], slotIdx: i });
-  }
+  // Open with just one terminal — users add more via the column-picker toggles.
+  // COLUMNS still holds all slot defaults so toggling slot 1/2 spawns them
+  // with the right accent/cwd/CLI overrides.
+  document.getElementById('grid').style.setProperty('--cols', 1);
+  await addColumn({ ...COLUMNS[0], slotIdx: 0 });
 
   document.getElementById('col-picker').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-n]');
