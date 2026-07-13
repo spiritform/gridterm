@@ -233,7 +233,6 @@ function buildColumn(col) {
   }
   el.innerHTML = `
     <div class="term-header">
-      <div class="dot"></div>
       <div class="info">
         <div class="project" contenteditable="plaintext-only" spellcheck="false">${col.project}</div>
         <div class="meta">
@@ -243,6 +242,7 @@ function buildColumn(col) {
       <div class="header-tags">
         <span class="cli">${col.cli}</span>
         <span class="badge">${col.badge}</span>
+        <div class="dot"></div>
         <button class="col-power" aria-label="run or stop CLI">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 2 v10"/>
