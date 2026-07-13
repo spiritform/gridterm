@@ -405,6 +405,13 @@ body:has(.settings-panel.open) .term-body { opacity: 1 !important; }
 .term-header .project {
   font-weight: 600; font-size: 13px; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  cursor: text; outline: none; border-radius: 2px;
+}
+.term-header .project:focus {
+  background: rgba(255,255,255,0.06);
+  box-shadow: 0 0 0 1px var(--accent);
+  padding: 0 4px; margin: 0 -4px;
+  overflow: visible;
 }
 .term-header .cwd-display { cursor: text; outline: none; border-radius: 2px; }
 .term-header .cwd-display:focus {

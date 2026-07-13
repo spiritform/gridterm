@@ -235,7 +235,7 @@ function buildColumn(col) {
     <div class="term-header">
       <div class="dot"></div>
       <div class="info">
-        <div class="project">${col.project}</div>
+        <div class="project" contenteditable="plaintext-only" spellcheck="false">${col.project}</div>
         <div class="meta">
           <span class="cwd-display" contenteditable="plaintext-only" spellcheck="false" title="${col.cwd}">${col.cwd}</span>
         </div>
@@ -447,6 +447,11 @@ async function mountTerminal(col, colEl, bodyEl) {
 
   const cwdEl = colEl.querySelector('.cwd-display');
   const projectEl = colEl.querySelector('.project');
+  // If the slot was loaded with a manually pinned title, prime registeredProject
+  // so the OSC-9 auto-basename doesn't overwrite it before claude runs.
+  if (col.manualProject && col.project) {
+    col.registeredProject = col.project;
+  }
   term.parser.registerOscHandler(9, (data) => {
     const semi = data.indexOf(';');
     if (semi < 0) return false;
@@ -529,13 +534,16 @@ async function mountTerminal(col, colEl, bodyEl) {
         badgeEl.classList.add('badge-active');
       }
       // Register the current cwd as this slot's identity — persists across sessions
-      // and stops the auto-basename updates from overwriting it.
+      // and stops the auto-basename updates from overwriting it. If the user
+      // already pinned a title manually, keep their name and only pin the cwd.
       const nowCwd = cwdEl?.title || cwdEl?.textContent || '';
       if (nowCwd && typeof col.slotIdx === 'number') {
         const basename = nowCwd.split(/[\\/]/).filter(Boolean).pop() || nowCwd;
-        saveSlotOverride(col.slotIdx, { project: basename, cwd: nowCwd });
-        col.registeredProject = basename;
-        if (projectEl && document.activeElement !== projectEl) {
+        const keepName = !!col.manualProject;
+        const projectName = keepName ? col.registeredProject : basename;
+        saveSlotOverride(col.slotIdx, { project: projectName, cwd: nowCwd });
+        col.registeredProject = projectName;
+        if (projectEl && document.activeElement !== projectEl && !keepName) {
           projectEl.textContent = basename;
         }
       }
@@ -569,6 +577,7 @@ async function mountTerminal(col, colEl, bodyEl) {
   const headerEl = colEl.querySelector('.term-header');
   headerEl.addEventListener('click', (e) => {
     if (e.target.closest('.cwd-display')) return;
+    if (e.target.closest('.project')) return;
     if (e.target.closest('.col-close')) return;
     if (dragActivated) return;
     term.focus();
@@ -635,18 +644,62 @@ async function mountTerminal(col, colEl, bodyEl) {
     }
   }
 
-  // Only the cwd is editable — titles are set by claude auto-register.
+  // The title is also editable — useful for naming a slot before the folder
+  // exists (e.g. a fresh project under claudecode-projects/). Editing pins the
+  // name so cwd changes don't overwrite it.
+  const commitProject = () => {
+    const val = projectEl.textContent.trim();
+    if (!val) {
+      const restore = col.registeredProject || col.project || '';
+      projectEl.textContent = restore;
+      return;
+    }
+    if (typeof col.slotIdx === 'number') {
+      saveSlotOverride(col.slotIdx, { project: val, manualProject: true });
+    }
+    col.registeredProject = val;
+    col.manualProject = true;
+    projectEl.textContent = val;
+  };
+  if (projectEl) {
+    projectEl.addEventListener('blur', commitProject);
+    projectEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === 'Escape') {
+        e.preventDefault();
+        e.currentTarget.blur();
+      }
+    });
+    projectEl.addEventListener('focus', () => {
+      const sel = window.getSelection();
+      if (!sel) return;
+      const range = document.createRange();
+      range.selectNodeContents(projectEl);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+  }
+
   const commitCwd = () => {
     const val = cwdEl.textContent.trim();
-    if (!val || typeof col.slotIdx !== 'number') return;
+    if (!val) {
+      // User deleted the whole path — restore the last known cwd so the
+      // header layout doesn't collapse into a title-only row.
+      const restore = cwdEl.title || col.cwd || '';
+      cwdEl.textContent = restore;
+      return;
+    }
+    if (typeof col.slotIdx !== 'number') return;
     // Manually pasting a new cwd re-identifies the slot — otherwise the
     // previously-registered project name (e.g. "babee") sticks even after
-    // navigating to a completely different folder.
+    // navigating to a completely different folder. But if the user pinned
+    // the title manually via the editable project field, keep that name.
     const basename = val.split(/[\\/]/).filter(Boolean).pop() || val;
-    saveSlotOverride(col.slotIdx, { cwd: val, project: basename });
+    const keepName = !!col.manualProject;
+    const projectName = keepName ? col.registeredProject : basename;
+    saveSlotOverride(col.slotIdx, { cwd: val, project: projectName });
     cwdEl.title = val;
-    col.registeredProject = basename;
-    if (projectEl && document.activeElement !== projectEl) {
+    if (!keepName) col.registeredProject = basename;
+    if (projectEl && document.activeElement !== projectEl && !keepName) {
       projectEl.textContent = basename;
     }
     // Actually cd into the new folder so the terminal reflects it immediately.
