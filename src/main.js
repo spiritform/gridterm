@@ -231,10 +231,15 @@ function buildColumn(col) {
   if (typeof col.slotIdx === 'number') {
     el.style.setProperty('--tint-bg', loadSlotBg(col.slotIdx));
   }
+  // Unless the user pinned a name, the title is always the current folder's
+  // basename — saved `project` values can be stale if the cwd changed later.
+  const titleText = col.manualProject
+    ? col.project
+    : (col.cwd ? (col.cwd.split(/[\\/]/).filter(Boolean).pop() || col.cwd) : col.project);
   el.innerHTML = `
     <div class="term-header">
       <div class="info">
-        <div class="project" contenteditable="plaintext-only" spellcheck="false">${col.project}</div>
+        <div class="project" contenteditable="plaintext-only" spellcheck="false">${titleText}</div>
         <div class="meta">
           <span class="cwd-display" contenteditable="plaintext-only" spellcheck="false" title="${col.cwd}">${col.cwd}</span>
         </div>
