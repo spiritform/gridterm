@@ -248,10 +248,10 @@ function buildColumn(col) {
         <span class="cli">${col.cli}</span>
         <span class="badge">${col.badge}</span>
         <div class="dot"></div>
-        <button class="col-power" aria-label="run or stop CLI">
+        <button class="col-power" aria-label="reset terminal">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M12 2 v10"/>
-            <path d="M18.36 6.64 a9 9 0 1 1 -12.72 0"/>
+            <polyline points="1 4 1 10 7 10"/>
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
           </svg>
         </button>
       </div>
@@ -525,7 +525,12 @@ async function mountTerminal(col, colEl, bodyEl) {
   });
 
   await listen(`pty-close-${col.id}`, () => {
-    term.write('\r\n\x1b[90m[process exited]\x1b[0m\r\n');
+    // Suppress the exit notice when the close was triggered by our own reset —
+    // the fresh shell is about to render its own prompt, so a dangling
+    // "[process exited]" would just be noise.
+    if (!col._resetting) {
+      term.write('\r\n\x1b[90m[process exited]\x1b[0m\r\n');
+    }
     col._altScreen = false;
     col._claudeIntent = false;
     col._syncPower?.();
@@ -595,55 +600,54 @@ async function mountTerminal(col, colEl, bodyEl) {
   if (powerBtn) {
     // Swallow pointerdown so the header's drag-start handler doesn't fire.
     powerBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
-    const isRunningNow = () =>
-      (badgeEl && badgeEl.classList.contains('badge-active')) ||
-      col._altScreen === true ||
-      col._claudeIntent === true;
-    powerBtn.addEventListener('click', (e) => {
+    powerBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (powerBtn.dataset.stopping === '1') return;
-      if (isRunningNow()) {
-        // Claude Code needs two Ctrl+Cs to exit: the first prompts "Press
-        // Ctrl-C again to exit", the second actually quits. Space them so
-        // claude has time to render the prompt between them.
-        powerBtn.dataset.stopping = '1';
-        invoke('write_pty', { id: col.id, data: '\x03' });
-        setTimeout(() => {
-          invoke('write_pty', { id: col.id, data: '\x03' });
-          if (badgeEl) {
-            badgeEl.textContent = col.badge;
-            badgeEl.classList.remove('badge-active');
-          }
-          if (cliEl) cliEl.textContent = col.cli;
-          col._claudeIntent = false;
-          delete powerBtn.dataset.stopping;
-          col._syncPower?.();
-        }, 250);
-      } else {
-        const cmd = typeof col.slotIdx === 'number' ? loadSlotAutoCli(col.slotIdx) : DEFAULT_AUTO_CLI;
-        if (!cmd) return;
-        // Resume in the folder currently shown in the header — cd first in case
-        // the shell has drifted, then continue the most recent claude session.
-        const currentCwd = (cwdEl?.title || cwdEl?.textContent || '').trim();
-        if (currentCwd) {
-          invoke('write_pty', { id: col.id, data: `cd /d "${currentCwd}"\r` });
+      if (powerBtn.dataset.resetting === '1') return;
+      powerBtn.dataset.resetting = '1';
+      col._resetting = true;
+      try {
+        // Full reset: kill the PTY (child.kill() on the Rust side), then respawn
+        // a fresh cmd.exe at the current header cwd. Works for any CLI — no
+        // per-tool special-casing. If the slot has an auto-launch CLI configured
+        // in Settings, it runs once the fresh shell is ready.
+        const currentCwd = (cwdEl?.title || cwdEl?.textContent || col.cwd || '').trim();
+        await invoke('kill_pty', { id: col.id });
+        try { term.reset(); } catch (_) {}
+        col._altScreen = false;
+        col._claudeIntent = false;
+        // Give the old reader thread a beat to finish emitting the child's last
+        // bytes before the fresh spawn re-uses the same pty-data event name.
+        await new Promise((r) => setTimeout(r, 150));
+        await invoke('spawn_pty', {
+          id: col.id,
+          shell: null,
+          cwd: currentCwd || null,
+          cols: term.cols,
+          rows: term.rows,
+        });
+        const cmd = typeof col.slotIdx === 'number' ? loadSlotAutoCli(col.slotIdx) : '';
+        if (cmd) {
+          // Wait for the fresh cmd.exe prompt to render before typing.
+          await new Promise((r) => setTimeout(r, 200));
+          await invoke('write_pty', { id: col.id, data: cmd + '\r' });
         }
-        const resumeCmd = cmd === 'claude' ? 'claude --continue' : cmd;
-        invoke('write_pty', { id: col.id, data: resumeCmd + '\r' });
-        // Snap to the live prompt so the user sees claude spin up even if they'd
-        // scrolled up in the previous session's history.
         try { term.scrollToBottom(); } catch (_) {}
-        col._claudeIntent = true;
         col._syncPower?.();
+      } finally {
+        delete powerBtn.dataset.resetting;
+        col._resetting = false;
       }
     });
-    // Reflect the running state on the power icon. Combines the sysinfo badge
-    // with two frontend signals (alt-screen + intent) so the button stays
-    // correct even when the process poller misses claude on Windows.
+    // Keep a subtle "active" hint on the icon when a CLI is running inside —
+    // pure visual cue, click behavior is always reset.
     const syncPower = () => {
-      const running = isRunningNow();
+      const running =
+        (badgeEl && badgeEl.classList.contains('badge-active')) ||
+        col._altScreen === true ||
+        col._claudeIntent === true;
       powerBtn.classList.toggle('running', !!running);
-      powerBtn.title = running ? 'Stop (Ctrl+C)' : `Run ${loadSlotAutoCli(col.slotIdx ?? 0) || 'shell'}`;
+      const cmd = loadSlotAutoCli(col.slotIdx ?? 0);
+      powerBtn.title = cmd ? `Reset terminal (relaunches ${cmd})` : 'Reset terminal';
     };
     col._syncPower = syncPower;
     syncPower();
