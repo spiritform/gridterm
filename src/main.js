@@ -53,7 +53,7 @@ function applyColorFromInput(type, slotIdx, hex) {
   }
 }
 
-const DEFAULT_AUTO_CLI = 'claude';
+const DEFAULT_AUTO_CLI = '';
 function loadSlotAutoCli(slotIdx) {
   const raw = localStorage.getItem(`gridterm.autoCli.${slotIdx}`);
   return raw === null ? DEFAULT_AUTO_CLI : raw;

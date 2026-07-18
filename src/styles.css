@@ -130,13 +130,19 @@ body:has(.settings-panel.open) .term-body { opacity: 1 !important; }
 .modal-body { padding: 16px 18px 18px; }
 .panel-body {
   display: flex;
-  gap: 40px;
+  flex-wrap: wrap;
+  gap: 20px 40px;
   align-items: flex-start;
 }
 .panel-col-power { flex: 0 0 auto; min-width: 160px; }
 .panel-col-fonts { flex: 0 0 auto; min-width: 260px; }
 .panel-col-colors { flex: 0 0 auto; }
-.panel-col-behavior { flex: 0 0 auto; }
+/* Always wraps to its own row so narrow windows still fit it. */
+.panel-col-behavior {
+  flex: 0 0 100%;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
 .panel-col-power .setting-section,
 .panel-col-colors .setting-section,
 .panel-col-behavior .setting-section { margin-top: 0; }
