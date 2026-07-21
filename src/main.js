@@ -231,11 +231,11 @@ function buildColumn(col) {
   if (typeof col.slotIdx === 'number') {
     el.style.setProperty('--tint-bg', loadSlotBg(col.slotIdx));
   }
-  // Unless the user pinned a name, the title is always the current folder's
-  // basename — saved `project` values can be stale if the cwd changed later.
-  const titleText = col.manualProject
-    ? col.project
-    : (col.cwd ? (col.cwd.split(/[\\/]/).filter(Boolean).pop() || col.cwd) : col.project);
+  // Title always follows the current folder's basename. Manual pins are
+  // session-only — a cwd change (or a fresh load) drops them.
+  const titleText = col.cwd
+    ? (col.cwd.split(/[\\/]/).filter(Boolean).pop() || col.cwd)
+    : col.project;
   el.innerHTML = `
     <div class="term-header">
       <div class="info">
@@ -468,16 +468,18 @@ async function mountTerminal(col, colEl, bodyEl) {
         cwdEl.textContent = cwd;
         cwdEl.title = cwd;
       }
-      // Keep the title in sync with the current folder as the user cd's around,
-      // even after claude has run. Only a manually pinned title (col.manualProject)
-      // blocks the auto-update.
-      if (projectEl && cwd && document.activeElement !== projectEl && !col.manualProject) {
+      // Keep the title in sync with the current folder as the user cd's
+      // around. A cwd change also drops any session-only manual pin.
+      if (projectEl && cwd && document.activeElement !== projectEl) {
         const basename = cwd.split(/[\\/]/).filter(Boolean).pop() || cwd;
         projectEl.textContent = basename;
+        col.registeredProject = basename;
+        col.manualProject = false;
       }
-      // Persist the current cwd so restarts land back here.
+      // Persist the current cwd so restarts land back here. Also clear any
+      // stored manualProject flag so a stale pin doesn't outlive the folder.
       if (cwd && typeof col.slotIdx === 'number') {
-        saveSlotOverride(col.slotIdx, { cwd });
+        saveSlotOverride(col.slotIdx, { cwd, manualProject: false });
       }
       return true;
     }
@@ -546,17 +548,15 @@ async function mountTerminal(col, colEl, bodyEl) {
         badgeEl.textContent = 'running';
         badgeEl.classList.add('badge-active');
       }
-      // Register the current cwd as this slot's identity — persists across sessions
-      // and stops the auto-basename updates from overwriting it. If the user
-      // already pinned a title manually, keep their name and only pin the cwd.
+      // Register the current cwd as this slot's identity. Title always
+      // tracks the folder basename — any prior manual pin is released.
       const nowCwd = cwdEl?.title || cwdEl?.textContent || '';
       if (nowCwd && typeof col.slotIdx === 'number') {
         const basename = nowCwd.split(/[\\/]/).filter(Boolean).pop() || nowCwd;
-        const keepName = !!col.manualProject;
-        const projectName = keepName ? col.registeredProject : basename;
-        saveSlotOverride(col.slotIdx, { project: projectName, cwd: nowCwd });
-        col.registeredProject = projectName;
-        if (projectEl && document.activeElement !== projectEl && !keepName) {
+        saveSlotOverride(col.slotIdx, { project: basename, cwd: nowCwd, manualProject: false });
+        col.registeredProject = basename;
+        col.manualProject = false;
+        if (projectEl && document.activeElement !== projectEl) {
           projectEl.textContent = basename;
         }
       }
@@ -701,17 +701,14 @@ async function mountTerminal(col, colEl, bodyEl) {
       return;
     }
     if (typeof col.slotIdx !== 'number') return;
-    // Manually pasting a new cwd re-identifies the slot — otherwise the
-    // previously-registered project name (e.g. "babee") sticks even after
-    // navigating to a completely different folder. But if the user pinned
-    // the title manually via the editable project field, keep that name.
+    // Manually pasting a new cwd re-identifies the slot: title always
+    // updates to the new folder's basename and any manual pin is dropped.
     const basename = val.split(/[\\/]/).filter(Boolean).pop() || val;
-    const keepName = !!col.manualProject;
-    const projectName = keepName ? col.registeredProject : basename;
-    saveSlotOverride(col.slotIdx, { cwd: val, project: projectName });
+    saveSlotOverride(col.slotIdx, { cwd: val, project: basename, manualProject: false });
     cwdEl.title = val;
-    if (!keepName) col.registeredProject = basename;
-    if (projectEl && document.activeElement !== projectEl && !keepName) {
+    col.registeredProject = basename;
+    col.manualProject = false;
+    if (projectEl && document.activeElement !== projectEl) {
       projectEl.textContent = basename;
     }
     // Actually cd into the new folder so the terminal reflects it immediately.
