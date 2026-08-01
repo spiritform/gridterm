@@ -425,7 +425,12 @@ body:has(.settings-panel.open) .term-body { opacity: 1 !important; }
   font-weight: 800; font-size: 22px; letter-spacing: -0.01em; line-height: 1.15;
   color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  cursor: text; outline: none; border-radius: 2px;
+  cursor: default; outline: none; border-radius: 2px;
+  user-select: none;
+}
+.term-header .project[contenteditable] {
+  cursor: text;
+  user-select: text;
 }
 .term-header .project:focus {
   background: rgba(255,255,255,0.08);
